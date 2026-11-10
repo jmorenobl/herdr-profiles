@@ -28,6 +28,7 @@ export const GIT_ENV = {
 const ALLOWED = new Set(["sh", "git", "mkdir", "mv", "test"]);
 export async function exec(cmd, args = [], opts = {}) {
   if (!ALLOWED.has(cmd)) throw new Error(`exec ${cmd} is not allowed in tests`);
+  state.execs = (state.execs ?? 0) + 1;
   const r = spawnSync(cmd, args, { encoding: "utf8", cwd: opts.cwd, env: GIT_ENV, timeout: opts.timeout ?? 30000 });
   if (r.error) throw r.error;
   return { code: r.status ?? -1, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };

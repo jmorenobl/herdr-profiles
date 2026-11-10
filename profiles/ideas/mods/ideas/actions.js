@@ -40,8 +40,18 @@ export function ideasSpace(folder) {
 // A tab's name for an idea (cut by characters, so an emoji isn't split in half).
 export const tabName = (idea) => (Array.from(idea.title).length > 28 ? `${cut(idea.title, 27)}…` : idea.title);
 
+// The idea's folder as given and with symlinks resolved (`realDir`, store.js): a terminal's
+// live folder may be either.
+const dirsOf = (idea) => [idea.dir, idea.realDir].filter(Boolean);
+const inIdea = (cwd, idea) => dirsOf(idea).some((d) => inside(cwd, d));
+// Inside some idea's folder (<root>/<type>/<slug>) of the ideas folder `idea` is in, but not `idea`'s.
+const inOtherIdea = (cwd, idea) => !inIdea(cwd, idea) && dirsOf(idea).some((d) => {
+  const root = d.split("/").slice(0, -2).join("/");
+  return inside(cwd, root) && cwd.slice(root.length + 1).split("/").filter(Boolean).length >= 2;
+});
+
 // Terminal panes whose live folder is inside the idea's folder.
-const panesIn = (idea) => panes().filter((p) => p.terminal && inside(p.cwd, idea.dir));
+const panesIn = (idea) => panes().filter((p) => p.terminal && inIdea(p.cwd, idea));
 
 // The idea's tab in `space`: one with a terminal working in the idea's folder (the agent tab
 // Develop opened, wherever its title went), else a tab named after the idea (its agent moved
@@ -52,8 +62,7 @@ export function tabFor(idea, space) {
   const tabs = new Map(space.tabs.map((t) => [t.id, t]));
   const byPane = panesIn(idea).map((p) => tabs.get(p.tab)).find(Boolean);
   if (byPane) return byPane;
-  const root = idea.dir.split("/").slice(0, -2).join("/");   // the ideas folder
-  const elsewhere = new Set(panes().filter((p) => p.terminal && inside(p.cwd, root) && !inside(p.cwd, idea.dir)).map((p) => p.tab));
+  const elsewhere = new Set(panes().filter((p) => p.terminal && inOtherIdea(p.cwd, idea)).map((p) => p.tab));
   return space.tabs.find((t) => t.named && t.name === tabName(idea) && !elsewhere.has(t.id)) ?? null;
 }
 

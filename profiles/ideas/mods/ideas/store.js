@@ -53,8 +53,13 @@ export function untypedNotice(folders) {
   };
 }
 
+// The folder with symlinks resolved (a terminal there may report either path), or null.
+const REAL = 'cd "$1" 2>/dev/null && pwd -P';
+
 export async function listIdeas(folder, types) {
-  const r = await exec("sh", ["-c", LIST, "ideas", folder, ...types]);
+  const [r, real] = await Promise.all([exec("sh", ["-c", LIST, "ideas", folder, ...types]),
+    exec("sh", ["-c", REAL, "ideas", folder]).catch(() => null)]);
+  const realFolder = real?.code === 0 && real.stdout.trim() !== folder ? real.stdout.trim() || null : null;
   const byId = new Map();
   for (const rel of r.stdout.split("\0").filter(Boolean)) {
     const [type, slug, ...rest] = rel.split("/");
@@ -78,6 +83,7 @@ export async function listIdeas(folder, types) {
     const { hasIdea: _, ...rest } = e;
     out.push({
       ...rest, dir, path, text, body,
+      realDir: realFolder ? `${realFolder}/${e.id}` : null,
       files: e.files.sort(),
       title: meta.title || e.slug.replace(/-/g, " "),
       status: STATUSES.includes(meta.status) ? meta.status : "seed",
@@ -212,41 +218,47 @@ export async function createIdea(folder, { title, body, type, origin }, types) {
   return dir.slice(folder.length + 1);
 }
 
-// Why git can't be committed to now (a merge, rebase, cherry-pick or revert under way,
-// conflicts, no branch), or null. Committing then would conclude the person's operation,
-// conflict markers and all, and `git add` would mark the conflicts resolved.
+// Why git can't be committed to now (a merge, rebase, cherry-pick or revert under way, a
+// sequence of picks not finished, conflicts, no branch). Committing then would conclude the
+// person's operation, conflict markers and all, and `git add` would mark the conflicts resolved.
 const BUSY = [["MERGE_HEAD", "a merge"], ["CHERRY_PICK_HEAD", "a cherry-pick"], ["REVERT_HEAD", "a revert"],
-  ["rebase-merge", "a rebase"], ["rebase-apply", "a rebase or git am"]];
+  ["rebase-merge", "a rebase"], ["rebase-apply", "a rebase or git am"], ["sequencer", "a cherry-pick or revert of several commits"]];
+const UNMERGED = BUSY.length + 1, DETACHED = BUSY.length + 2;
 
-// The first of its arguments that exists (relative ones from $1), as its position from 1, or nothing.
-const FIRST = 'cd "$1" || exit 1; shift; n=0; for p in "$@"; do n=$((n+1)); [ -e "$p" ] && { echo $n; exit 0; }; done; true';
-
-async function gitBusy(git, folder) {
-  const r = await git("rev-parse", ...BUSY.flatMap(([p]) => ["--git-path", p]));
-  const paths = r.stdout.split("\n").filter(Boolean);
-  if (r.code !== 0 || paths.length !== BUSY.length) return "git can't read the repo";
-  const found = Number((await exec("sh", ["-c", FIRST, "busy", folder, ...paths])).stdout.trim());
-  if (found) return `${BUSY[found - 1][1]} is in progress`;
-  if ((await git("ls-files", "--unmerged")).stdout.trim()) return "it has unresolved conflicts";
-  if ((await git("symbolic-ref", "-q", "HEAD")).code !== 0) return "it isn't on a branch (detached HEAD)";
-  return null;
-}
+// One process for what close() has little time for: prints "none" when nothing changed (new
+// files count even with status.showUntrackedFiles=no), else the position (from 1) of the first
+// of its git paths that exists, or UNMERGED / DETACHED, or "ok". $1 is the folder.
+const CHECK = `cd "$1" || exit 1; shift
+[ -n "$(git status --porcelain --untracked-files=all)" ] || { echo none; exit 0; }
+n=0; for p in "$@"; do n=$((n+1)); [ -e "$p" ] && { echo $n; exit 0; }; done
+[ -z "$(git ls-files --unmerged)" ] || { echo ${UNMERGED}; exit 0; }
+git symbolic-ref -q HEAD >/dev/null || { echo ${DETACHED}; exit 0; }
+echo ok`;
 
 // Commits everything that changed in the ideas folder, if it's a git repo of its own.
 // The subject names the idea when only one changed. Returns the subject, or null.
 // Throws (the side panel warns once) when the folder is inside a bigger repo or git is busy.
+// Five processes, so it mostly fits in close()'s time; cut short after `git add`, the next
+// commit takes what was staged.
 export async function autocommit(folder, ideas, types) {
   const git = (...args) => exec("git", ["-C", folder, ...args], { timeout: 20000 });
-  const top = await git("rev-parse", "--is-inside-work-tree", "--show-prefix");
-  if (top.code !== 0 || top.stdout.split("\n")[0] !== "true") return null;
+  const top = await git("rev-parse", "--is-inside-work-tree", "--show-prefix", ...BUSY.flatMap(([p]) => ["--git-path", p]));
+  const lines = top.stdout.split("\n");
+  if (top.code !== 0 || lines[0] !== "true") return null;
   // A folder inside a bigger repo (a notes or dotfiles repo): a commit there would take
   // whatever else is staged in it, so only a folder that is its repo's top is committed.
-  const prefix = top.stdout.split("\n")[1] ?? "";
+  const prefix = lines[1] ?? "";
   if (prefix) throw new Error(`The ideas folder is inside a bigger git repo (as ${prefix.replace(/\/$/, "")}): autocommit only commits a folder that is a repo of its own. Set "autocommit": false to stop this warning.`);
-  // -uall: status.showUntrackedFiles=no would hide new ideas.
-  if (!(await git("status", "--porcelain", "--untracked-files=all")).stdout.trim()) return null;
-  const busy = await gitBusy(git, folder);
-  if (busy) throw new Error(`Not committing while ${busy} in the ideas folder; finish it in a terminal.`);
+  const paths = lines.slice(2, 2 + BUSY.length);
+  if (paths.length !== BUSY.length || paths.some((x) => !x)) throw new Error("git can't read the ideas folder's repo");
+  const check = (await exec("sh", ["-c", CHECK, "ideas", folder, ...paths], { timeout: 20000 })).stdout.trim();
+  if (check === "none") return null;
+  if (check !== "ok") {
+    const n = Number(check);
+    const busy = n === UNMERGED ? "it has unresolved conflicts" : n === DETACHED ? "it isn't on a branch (detached HEAD)"
+      : BUSY[n - 1] ? `${BUSY[n - 1][1]} is in progress` : "git can't read the repo";
+    throw new Error(`Not committing while ${busy} in the ideas folder; finish it in a terminal.`);
+  }
   // Everything but Finder's .DS_Store files, even when the folder's .gitignore doesn't list them.
   if ((await git("add", "-A", "--", ".", ":(exclude,glob)**/.DS_Store")).code !== 0) throw new Error("git add failed");
   // -z: paths as they are (no quoting of non-ASCII names), "<status>\0<path>\0" each.

@@ -103,6 +103,32 @@ test("autocommit won't commit during a rebase", async () => {
   gTry(R, "rebase", "--abort");
 });
 
+test("autocommit waits for a cherry-pick of several commits", async () => {
+  const C = repo("sequencer");
+  write(`${C}/code/c/idea.md`, idea("C")); g(C, "add", "-A"); g(C, "commit", "-qm", "base");
+  g(C, "checkout", "-qb", "other");
+  write(`${C}/code/c/idea.md`, idea("C", "why: o1\n")); g(C, "commit", "-qam", "o1");
+  write(`${C}/code/d/idea.md`, idea("D")); g(C, "add", "-A"); g(C, "commit", "-qm", "o2");
+  g(C, "checkout", "-q", "main"); write(`${C}/code/c/idea.md`, idea("C", "why: main\n")); g(C, "commit", "-qam", "m");
+  assert.equal(gTry(C, "cherry-pick", "main..other"), null, "the first pick conflicts");
+  write(`${C}/code/c/idea.md`, idea("C", "why: both\n")); g(C, "add", "-A"); g(C, "commit", "-qm", "o1 resolved");
+  write(`${C}/code/e/idea.md`, idea("E"));
+  await assert.rejects(autocommit(C, [], T), /several commits is in progress/);
+  assert.equal(subject(C), "o1 resolved");
+  gTry(C, "cherry-pick", "--abort");
+});
+
+test("autocommit runs few processes", async () => {
+  const R = repo("count");
+  write(`${R}/code/x/idea.md`, idea("X"));
+  state.execs = 0;
+  assert.equal(await autocommit(R, [], T), "Add idea: x");
+  assert.ok(state.execs <= 5, `${state.execs} processes`);
+  state.execs = 0;
+  assert.equal(await autocommit(R, [], T), null);
+  assert.ok(state.execs <= 2, `${state.execs} processes with nothing to do`);
+});
+
 test("autocommit won't commit on a detached HEAD", async () => {
   const D = repo("detached");
   g(D, "checkout", "-q", "--detach");
@@ -389,6 +415,32 @@ test("a type change waits for the tab working in the idea", async () => {
   assert.equal(selected(), "book/a");
 });
 
+test("a review retry leaves a status changed meanwhile", async () => {
+  const F = fresh("review-status");
+  write(`${F}/code/s/idea.md`, idea("S"));
+  const { v, cx } = await view(F, "board");
+  v.startReview(cx);
+  state.beforeWrite = (p) => {
+    if (p.endsWith("/code/s/idea.md") && !state.edited) { state.edited = true; write(p, read(p).replace("status: seed", "status: active")); }
+  };
+  v.reviewAct("park", cx);
+  await settle();
+  assert.equal(parse(read(`${F}/code/s/idea.md`)).meta.status, "active");
+  assert.deepEqual(noteTitles(), ["Could not save the review of an idea"]);
+});
+
+test("a symlinked ideas folder is matched by its real path", async () => {
+  const real = fresh("real-ideas");
+  const link = path.join(ROOT, `${++n}-link`);
+  fs.symlinkSync(real, link);
+  write(`${real}/code/a/idea.md`, idea("A"));
+  const [a] = await listIdeas(link, T);
+  assert.equal(a.dir, `${link}/code/a`);
+  assert.equal(a.realDir, `${fs.realpathSync(real)}/code/a`);
+  const [b] = await listIdeas(fs.realpathSync(real), T);
+  assert.equal(b.realDir, null, "no second path when there's no link");
+});
+
 test("a double click on a status writes once", async () => {
   const F = fresh("status-twice");
   write(`${F}/code/a/idea.md`, idea("A"));
@@ -415,6 +467,12 @@ test("agent tabs are found by their folder, names only when named", async () => 
   assert.equal(tabFor(a, space)?.id, "tA", "a named tab whose agent moved elsewhere");
   assert.equal(tabFor({ dir: `${F}/code/two`, title: "2" }, space), null, "an unnamed tab's position isn't a name");
   assert.equal(tabFor({ dir: `${F}/code/ab`, title: "zz" }, { tabs: [{ id: "tA", name: "x", named: true }] }), null, "code/a isn't inside code/ab");
+  state.panes = [{ pane: "p", terminal: "x", tab: "tA", cwd: F }, { pane: "r", terminal: "z", tab: "tA", cwd: `${F}/code` }];
+  assert.equal(tabFor(a, space)?.id, "tA", "an agent at the ideas folder's top or in a type folder still has its tab");
+  state.panes = [{ pane: "p", terminal: "x", tab: "tB", cwd: "/real/ideas/code/b/x" }];
+  assert.equal(tabFor({ ...b, realDir: "/real/ideas/code/b" }, space)?.id, "tB", "a terminal reporting the resolved path");
+  state.spaces = [space];
+  assert.equal(workingIn({ ...b, realDir: "/real/ideas/code/b" })?.id, "tB");
   assert.equal(tabName({ title: "a".repeat(26) + "🚀🚀" }), "a".repeat(26) + "🚀🚀", "28 characters fit");
   assert.equal(tabName({ title: "a".repeat(26) + "🚀🚀🚀" }), "a".repeat(26) + "🚀…");
 });
@@ -471,7 +529,7 @@ test("every role renders", async () => {
 
 const out = {};
 for (const [name, fn] of Object.entries(cases)) {
-  Object.assign(state, { notes: [], runs: [], shared: new Map(), spaces: [], panes: [], failWrite: null, beforeWrite: null, props: {} });
+  Object.assign(state, { notes: [], runs: [], shared: new Map(), spaces: [], panes: [], failWrite: null, beforeWrite: null, props: {}, edited: false });
   try { await fn(); out[name] = null; }
   catch (e) { out[name] = String(e?.stack ?? e); }
 }

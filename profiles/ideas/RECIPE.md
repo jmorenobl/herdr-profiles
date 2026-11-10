@@ -75,7 +75,8 @@ with its notes and actions, and one key captures a new idea from any space.
   Esc cancels); Skip changes nothing. Each choice is written at once, in
   order, on the file as it is on disk then (an agent may have written it
   meanwhile: a write that finds it changed reads it again and tries once
-  more). Finishing the queue writes `reviewed:` (today) to `.board.json`;
+  more, unless its `status:` changed there too: then that newer choice
+  stands and the review says it couldn't save). Finishing the queue writes `reviewed:` (today) to `.board.json`;
   leaving early doesn't. A write that fails says so ("Could not save the
   review of an idea", "Could not save the review") and isn't counted in the
   end's summary; a failed `reviewed:` leaves the Review button due. Keys work once the review has focus (it takes it
@@ -96,13 +97,15 @@ with its notes and actions, and one key captures a new idea from any space.
   and commits one minute after the last change it sees, and once when it
   starts. A timer that fires while a commit runs waits for another quiet
   minute after it, so nothing is left behind; when the panel goes (the layout
-  switches away, the app quits) a commit still waiting is made right away.
+  switches away, the app quits) a commit still waiting is tried right away
+  (in five git/sh processes: close() has a quarter of a second, and a commit
+  cut short leaves the changes staged for the next one).
   New files count even with `status.showUntrackedFiles=no`. Subjects: "Add idea: <title>",
   "Update: <title>", "Remove idea: <title>", "Update N ideas", "Board: order
   and review" (non-ASCII names as they are, cut at 72 characters); the body
   lists the files. It doesn't commit, and warns, when the folder is inside a
   bigger repo (a commit there would take whatever else is staged), or while a
-  merge, rebase, cherry-pick or revert is under way, with unresolved
+  merge, rebase, cherry-pick or revert (of one commit or several) is under way, with unresolved
   conflicts or on a detached HEAD (it would conclude the person's operation,
   conflict markers and all); finishing that in a terminal lets it go on. A failure warns once until a commit
   works again. `"autocommit": false` under `profiles.ideas` turns it off.
@@ -120,7 +123,9 @@ with its notes and actions, and one key captures a new idea from any space.
   (the `agent` setting; the button says its name) in the idea's folder, asked to read `idea.md`, start with questions and keep
   notes beside it. If that tab exists, it's selected instead: a tab with a
   terminal working inside the idea's folder, else a tab named after the idea
-  (only a named tab, and not one working in another idea). Showing that tab
+  (only a named tab, and not one working in another idea's folder). The
+  folder is matched as given and with symlinks resolved, as a terminal may
+  report either; the same check guards type changes. Showing that tab
   selects its idea in the panel.
 - **Start project** (ripe ideas without a project) opens the same kind of
   tab, asked to follow "Starting a project" in the folder's AGENTS.md, in

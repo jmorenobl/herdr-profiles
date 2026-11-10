@@ -3,7 +3,7 @@
 import { div } from "gpui-kit";
 import { v_flex, h_flex, Input, TextView } from "gpui-base";
 import { notify, setShared, readTextFile } from "herdr";
-import { updateIdea, readBoard, writeBoard, ago, today, touched, isStale } from "./store.js";
+import { updateIdea, readBoard, writeBoard, parse, ago, today, touched, isStale } from "./store.js";
 import { STATUS_LABEL, statusColor, dot, button } from "./ui.js";
 import { ideasSpace, openBoard, lastMove, followMoves } from "./actions.js";
 import { REVIEW } from "./common.js";
@@ -53,13 +53,15 @@ export class Review {
     cx.spawn(async (cx) => { await this.writes; await this.reload(cx); });
   }
 
-  // An idea's change, from the text on disk now (an agent may have written it meanwhile).
+  // An idea's change, from the text on disk now (an agent may have written it meanwhile),
+  // unless its status changed there too: then the person's newer choice stands.
   writeIdea(idea, changes) {
     let first = true;
     return async () => {
       const text = first ? idea.text : await readTextFile(idea.path).catch(() => null);
       first = false;
       if (text === null) throw new Error("gone");
+      if (parse(text).meta.status !== parse(idea.text).meta.status) throw new Error("status changed");
       await updateIdea({ ...idea, text }, changes);
     };
   }
