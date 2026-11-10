@@ -1,19 +1,59 @@
 # Herdr profiles
 
-Different kinds of projects want different windows. A book wants a quiet,
-warm page and its chapters at hand; an idea inbox wants a board; a repo
-driven by an agent factory wants to show which phase it's in. This repo
-gives [Herdr](https://herdr.dev) **profiles**: each one is a layout, a theme
-and its panels, and Herdr switches to the right one when you go to a space.
+**One window per kind of project.** A book wants a quiet, warm page; an idea
+inbox wants a board; a repo wants its history at hand. Profiles give
+[Herdr](https://herdr.dev) a layout, a theme and panels for each kind of
+project, and switch to the right one as you move between spaces.
 
-![The ideas profile: a board of ideas by status, and the selected idea's details](profiles/ideas/docs/board.png)
+[![Tests](https://github.com/jmorenobl/herdr-profiles/actions/workflows/test.yml/badge.svg)](https://github.com/jmorenobl/herdr-profiles/actions/workflows/test.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+[![Herdr 0.1.14+](https://img.shields.io/badge/Herdr-0.1.14%2B-e8743b)](https://herdr.dev)
+![macOS](https://img.shields.io/badge/platform-macOS-555)
+![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-3776ab)
 
-Profiles are added one at a time, as projects need them.
+<p align="center"><img src="profiles/ideas/docs/board.png" width="820" alt="The ideas profile: a board of ideas by status, and the selected idea's details"></p>
 
-| Profile | For | What it adds |
-|---|---|---|
-| `standard` | everything else (the default) | Herdr's main window, the invisible profile switcher, a Files panel that shows markdown rendered, and a History panel with the repo's commits and branches as a graph |
-| [`ideas`](profiles/ideas/README.md) | an idea inbox folder | a warm theme, a kanban of ideas by status, idea details with Claude and project actions, quick capture with `ctrl-shift-i` from any space, a weekly review of stale ideas |
+## How it feels
+
+- **Go to a space, get its window.** An invisible switcher in every profile
+  picks the profile from the space's folder: a `.herdr-profile` file, a
+  rule of yours, or the default. No buttons, no setup per project.
+- **Panels that know the project.** Files shows markdown rendered, with
+  images and links. History shows the repo's commits and branches as a
+  graph, with each commit's diff one click away.
+- **Your Herdr stays yours.** Install only adds: your layouts, themes, keys
+  and rules are never changed, and uninstall takes back what it added
+  (unless you changed it since).
+
+## The profiles
+
+### `standard`: every project, by default
+
+Herdr's main window, plus a **Files** panel that renders markdown (images,
+badges, links between files) and a **History** panel: commits and branches
+as a graph, tags and branch chips, a branch picker, and each commit's files
+and diffs. Read-only: it never writes to your repo.
+
+<p align="center"><img src="docs/history.png" width="420" alt="The History panel: a repo's commits as a graph, with branch and tag chips"></p>
+
+### [`ideas`](profiles/ideas/README.md): an idea inbox
+
+A warm theme and a kanban of ideas by status: seed, exploring, ripe,
+active (and parked or dropped, out of the way). Each
+idea is a folder with its notes; open it, develop it with your coding
+agent, or start a project from it.
+
+- **Quick capture** from any space with `ctrl-shift-i`.
+- **A weekly review** walks you through the ideas nobody touched in a month:
+  keep going, park or drop, one key each.
+- **Autocommit**: when the folder is a git repo, every change is committed
+  after a quiet minute, with a subject naming the idea.
+
+<p align="center"><img src="profiles/ideas/docs/capture.png" width="400" alt="The New idea dialog"></p>
+
+<p align="center"><img src="profiles/ideas/docs/review.png" width="560" alt="Reviewing one stale idea"></p>
+
+More in [the ideas profile's README](profiles/ideas/README.md).
 
 ## Install
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.3 — 2026-11-10
+
+- README: a front page for people who don't know Herdr profiles yet: badges
+  (tests, license, Herdr, macOS, Python), what it feels like, and each
+  profile with screenshots (a History panel shot of a demo repo in
+  `docs/history.png`, no metadata).
+
 ## 0.9.2 — 2026-11-10
 
 What exists, working well: fixes from independent audits of every mod and
