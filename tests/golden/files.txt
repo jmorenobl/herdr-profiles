@@ -19,6 +19,7 @@ mods/standard-files/chevron-right.svg
 mods/standard-files/file.svg
 mods/standard-files/folder.svg
 mods/standard-files/main.js
+mods/standard-files/markdown.js
 mods/standard-files/mod.json
 mods/standard-history/back.svg
 mods/standard-history/down.svg

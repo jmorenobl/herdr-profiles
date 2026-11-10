@@ -13,10 +13,18 @@ function find(node, id) {
   return null;
 }
 
+// Module scope lasts the app's run and is shared by every copy: each layout
+// starts its own copy (a layout switch, by hand or by the profile switcher,
+// starts this bar afresh), and localStorage is per copy. So the per-space panel
+// memory and whether this run has already shown a space live here, and a
+// layout switch counts as a space change, not as the app starting.
+const memory = { panels: null, started: false };
+
 export default class Tabs extends View {
   init() {
     this.pressed = null;
-    this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}");
+    memory.panels ??= JSON.parse(localStorage.getItem("panels") ?? "{}");
+    this.panels = memory.panels;
   }
 
   // The side panel is remembered per space: switching shows that space's choice
@@ -25,7 +33,8 @@ export default class Tabs extends View {
     if (!space || !panel) return;
     const now = panel.hidden ? null : body?.active ?? null;
     if (space.id !== this.space) {
-      const first = this.space === undefined;
+      const first = this.space === undefined && !memory.started;
+      memory.started = true;
       this.space = space.id; this.pending = null;
       if (!(first && !(space.id in this.panels))) {
         const stored = this.panels[space.id] ?? null, want = enabled.includes(stored) ? stored : null;

@@ -85,6 +85,17 @@ terminal's), and picks:
    e.g. `{ "has": ".board.json", "profile": "ideas" }`;
 3. else `default`.
 
+Rules compare folders as text, so:
+
+- **Letter case counts**, even though macOS folders don't: `~/Code` doesn't
+  match a space in `~/code`.
+- **Symlinks aren't followed**: the folder is the one the terminal reports.
+  If you reach a project through a symlink, write the rule for that path (or
+  add a rule for each).
+- **`~` in `path` is this computer's home.** For a space on another machine,
+  write the full folder there (`/home/you/ideas`); `.herdr-profile` files
+  and `has` work there as here.
+
 Edits apply the next time you change space. A profile's own settings (like
 the ideas folder, or its [other options](profiles/ideas/README.md)) go in
 its entry; install never asks again once a profile is there: change it in

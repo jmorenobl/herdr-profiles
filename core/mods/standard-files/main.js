@@ -4,6 +4,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState, TextView } from "gpui-base";
 import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, appHome } from "herdr";
+import { splitImages, linkTarget } from "./markdown.js";
 
 function location() {
   const space = spaces().find(s => s.active), f = focused();
@@ -17,66 +18,29 @@ const PER_FOLDER = 500, TOTAL = 5000;
 const MARKDOWN = new Set(["md", "markdown", "mdown", "mkd"]);
 const isMarkdown = path => MARKDOWN.has(path?.split(".").pop()?.toLowerCase());
 
-// Markdown split around its images, which TextView doesn't draw: text parts and
-// { alt, src } parts. Fenced code is left alone.
-const IMAGE = /!\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)|<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi;
-function splitImages(md) {
-  const parts = []; let text = "", fence = null;
-  for (const line of md.split("\n")) {
-    const f = line.match(/^\s*(```|~~~)/);
-    if (fence) { if (f && f[1] === fence) fence = null; text += line + "\n"; continue; }
-    if (f) { fence = f[1]; text += line + "\n"; continue; }
-    let last = 0, m;
-    IMAGE.lastIndex = 0;
-    while ((m = IMAGE.exec(line))) {
-      text += line.slice(last, m.index);
-      if (text.trim()) parts.push(text); text = "";
-      parts.push({ alt: m[1] ?? "", src: m[2] ?? m[3] });
-      last = IMAGE.lastIndex;
-    }
-    text += line.slice(last) + "\n";
-  }
-  if (text.trim()) parts.push(text);
-  return parts;
-}
-
 // Copies $1 (a file, or a URL when $4 is "url") into the cache folder $2 as
-// <key>.$3 and prints that name. The key changes with the file's time and size,
-// so an edited image is shown fresh; files unused for 30 days are removed.
+// <key>.$3 and prints that name. A file's key changes with its time and size, so
+// an edited image is shown fresh; a URL's every 6 hours, so a badge refreshes
+// (offline, its last download is used). Files unused for 30 days are removed.
 const CACHE = `src=$1 dir=$2 ext=$3
-if [ "$4" = url ]; then v=; else v=$(stat -c '%Y %s' "$src" 2>/dev/null || stat -f '%m %z' "$src") || exit 1; fi
-key=$(printf '%s %s' "$src" "$v" | cksum | cut -d' ' -f1)
+if [ "$4" = url ]; then v=$(( $(date +%s) / 21600 )); else v=$(stat -c '%Y %s' "$src" 2>/dev/null || stat -f '%m %z' "$src") || exit 1; fi
+id=$(printf '%s' "$src" | cksum | cut -d' ' -f1)
+if [ "$4" = url ]; then key=$id-$v; else key=$(printf '%s %s' "$src" "$v" | cksum | cut -d' ' -f1); fi
 out="$dir/$key.$ext"
 mkdir -p "$dir" || exit 1
 if [ ! -s "$out" ]; then
   find "$dir" -type f -atime +30 -delete 2>/dev/null
-  if [ "$4" = url ]; then curl -fsSL --max-time 20 --max-filesize 20000000 -o "$out.part" "$src" || { rm -f "$out.part"; exit 1; }
+  if [ "$4" = url ]; then
+    if ! curl -fsSL --max-time 20 --max-filesize 20000000 -o "$out.part" "$src"; then
+      rm -f "$out.part"
+      old=$(ls -t "$dir/$id"-*."$ext" 2>/dev/null | head -n 1)
+      [ -n "$old" ] || exit 1
+      printf '%s' "\${old##*/}"; exit 0
+    fi
   else cp "$src" "$out.part" || exit 1; fi
   mv "$out.part" "$out"
 fi
 printf '%s' "$key.$ext"`;
-
-// A markdown link's target as a path relative to the panel's root, or null when
-// it isn't a local file there. `from` is the linking file, relative to the root.
-function linkTarget(url, root, from) {
-  let p = url;
-  if (/^file:\/\//i.test(p)) p = p.replace(/^file:\/\/[^/]*/i, "");
-  else if (/^[a-z][a-z0-9+.-]*:/i.test(p)) return null;
-  p = p.replace(/[?#].*$/, "");
-  try { p = decodeURIComponent(p); } catch { return null; }
-  if (!p) return null;
-  if (p.startsWith("/")) {
-    if (!root || !p.startsWith(root + "/")) return null;
-    p = p.slice(root.length + 1);
-  } else p = [...from.split("/").slice(0, -1), p].join("/");
-  const parts = [];
-  for (const part of p.split("/")) {
-    if (part === "" || part === ".") continue;
-    if (part === "..") { if (!parts.length) return null; parts.pop(); }
-    else parts.push(part);
-  }
-  return parts.length ? parts.join("/") : null;
-}
 
 async function directory(path, on) {
   const windowsDirectory = async () => {
@@ -218,46 +182,71 @@ export default class Files extends View {
   }
 
   // Links to http(s) open in the browser; links to files under the root open
-  // here, and ← comes back. Anything else (mailto:, outside the root) is ignored.
+  // here, and ← comes back; a link to a folder there opens it in the tree.
+  // Anything else (mailto:, outside the root) is ignored.
   follow(url, cx) {
     if (/^https?:\/\//i.test(url)) return cx.open_url(url);
     const target = linkTarget(url, this.root, this.file ?? "");
     if (!target || target === this.file) return;
-    this.history.push(this.file);
-    this.show(target, cx);
-    cx.notify();
+    const context = this.context, from = this.file;
+    cx.spawn(async cx => {
+      const r = await exec("sh", ["-c", 'test -d "$1"', "files", `${context.cwd}/${target}`], { on: context.on }).catch(() => null);
+      if (!this.current(context) || this.file !== from) return;
+      if (r?.code === 0) this.reveal(target, cx);
+      else { this.history.push(from); this.show(target, cx); }
+      cx.notify();
+    });
+  }
+
+  // Back to the tree, with `path` and the folders above it open.
+  reveal(path, cx) {
+    this.history = []; this.show(null);
+    const parts = path.split("/");
+    for (let i = 1; i <= parts.length; i++) {
+      const folder = parts.slice(0, i).join("/");
+      if (!this.folders.has(folder)) this.toggle(folder, cx);
+    }
   }
 
   // An image the markdown shows. image() reads only inside the Herdr home, so
   // the file (or download) is copied to .cache/standard-files there first.
-  picture({ alt, src }, i, t) {
+  // A linked image (a badge) opens its link when clicked.
+  picture({ alt, src, link }, i, t) {
     const state = this.pictures?.get(src);
-    if (state?.path) return div().py(6).child(image(state.path).max_w_full());
-    return div().id(`files-img-${i}`).my(6).px(10).py(6).rounded(6).border_1().border_color(t.border).text_size(12).text_color(t.dim)
-      .child(`${state?.error ? "⚠ " : "▢ "}${alt || src}${state?.error ? ` · ${state.error}` : state ? "" : " · loading…"}`);
+    const shown = state?.path ? div().id(`files-img-${i}`).py(6).child(image(state.path).max_w_full())
+      : div().id(`files-img-${i}`).my(6).px(10).py(6).rounded(6).border_1().border_color(t.border).text_size(12).text_color(t.dim)
+        .child(`${state?.error ? "⚠ " : "▢ "}${alt || src}${state?.error ? ` · ${state.error}` : state ? "" : " · loading…"}`);
+    return link ? shown.cursor_pointer().on_click((_e, cx) => this.follow(link, cx)) : shown;
   }
 
-  // Copies each image of the shown markdown into the cache, once per version.
+  // Copies each image of the shown markdown into the cache, once per version,
+  // at most 4 at a time.
   loadPictures(parts, cx) {
-    const file = this.file, root = this.root, on = this.on;
-    this.pictures = new Map();
+    const file = this.file, root = this.root, on = this.on, context = this.context;
+    const pictures = this.pictures = new Map(), queue = [];
     for (const part of parts) {
-      if (typeof part === "string" || this.pictures.has(part.src)) continue;
+      if (typeof part === "string" || pictures.has(part.src)) continue;
       const src = part.src, remote = /^https?:\/\//i.test(src);
       const target = remote ? null : linkTarget(src, root, file);
-      if (!remote && !target) { this.pictures.set(src, { error: "not in this folder" }); continue; }
-      if (on && !remote) { this.pictures.set(src, { error: "on another machine" }); continue; }
+      if (!remote && !target) { pictures.set(src, { error: "not in this folder" }); continue; }
+      if (on && !remote) { pictures.set(src, { error: "on another machine" }); continue; }
       const ext = ((remote ? src.replace(/[?#].*$/, "") : target).match(/\.([a-z0-9]{2,5})$/i)?.[1] ?? "img").toLowerCase();
-      this.pictures.set(src, { pending: true });
-      cx.spawn(async cx => {
+      pictures.set(src, { pending: true });
+      queue.push({ src, remote, target, ext });
+    }
+    // Only for this file, in this place: a new file or space gets its own map.
+    const live = () => this.pictures === pictures && this.file === file && this.current(context);
+    for (let n = Math.min(4, queue.length); n > 0; n--) cx.spawn(async cx => {
+      for (let job; live() && (job = queue.shift());) {
+        const { src, remote, target, ext } = job;
         let state;
         try {
           const r = await exec("sh", ["-c", CACHE, "files", remote ? src : `${root}/${target}`, `${appHome()}/.cache/standard-files`, ext, remote ? "url" : "file"], { timeout: 30000 });
           state = r.code === 0 && r.stdout.trim() ? { path: `.cache/standard-files/${r.stdout.trim()}` } : { error: remote ? "can't download it" : "can't read it" };
         } catch { state = { error: "can't load it" }; }
-        if (this.file === file && this.pictures?.get(src)?.pending) { this.pictures.set(src, state); cx.notify(); }
-      });
-    }
+        if (live() && pictures.get(src)?.pending) { pictures.set(src, state); cx.notify(); }
+      }
+    });
   }
 
   rows(prefix, depth, out, t) {

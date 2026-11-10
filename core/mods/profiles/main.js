@@ -10,16 +10,32 @@ import { spaces, panes, layouts, shared, setShared, run, exec, readTextFile, app
 const HANDLED = "profiles.space";
 const MARKER = ".herdr-profile";
 
+const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+const own = (o, k) => typeof k === "string" && Object.prototype.hasOwnProperty.call(o, k);
+
+// profiles.json as { default, profiles, rules }, whatever shape the file has:
+// a profile is an object, a rule is an object, anything else is left out.
 export async function loadConfig() {
+  const empty = { default: null, profiles: {}, rules: [] };
   const text = await readTextFile(`${appHome()}/profiles.json`).catch(() => null);
-  if (!text) return { default: null, profiles: {}, rules: [] };
+  if (!text) return empty;
+  let c;
   try {
-    const c = JSON.parse(text);
-    return { default: c.default ?? null, profiles: c.profiles ?? {}, rules: c.rules ?? [] };
+    c = JSON.parse(text);
   } catch (e) {
     console.log(`profiles.json is not valid JSON: ${e}`);
-    return { default: null, profiles: {}, rules: [] };
+    return empty;
   }
+  if (!isObject(c)) {
+    console.log("profiles.json is not a JSON object: using the default layout");
+    return empty;
+  }
+  const profiles = isObject(c.profiles) ? Object.fromEntries(Object.entries(c.profiles).filter(([, p]) => isObject(p))) : {};
+  return {
+    default: typeof c.default === "string" ? c.default : null,
+    profiles,
+    rules: Array.isArray(c.rules) ? c.rules.filter(isObject) : [],
+  };
 }
 
 export const expand = (p, machine) =>
@@ -36,7 +52,8 @@ function spaceFolder(space) {
 }
 
 // Looks for `name` in `folder` and its parents; prints the match's path.
-const FIND_UP = 'd=$1; while :; do if [ -e "$d/$2" ]; then printf "%s" "$d/$2"; exit 0; fi; [ "$d" = / ] || [ -z "$d" ] && exit 1; d=$(dirname "$d"); done';
+// `~` is that machine's home; a folder that isn't absolute has no parents to look in.
+export const FIND_UP = 'd=$1; case $d in "~") d=$HOME;; "~/"*) d=$HOME/${d#"~/"};; esac; case $d in /*) ;; *) exit 1;; esac; while :; do if [ -e "$d/$2" ]; then printf "%s" "$d/$2"; exit 0; fi; p=$(dirname "$d"); [ "$p" = "$d" ] && exit 1; d=$p; done';
 
 async function findUp(folder, name, on) {
   const r = await exec("sh", ["-c", FIND_UP, "profiles", folder, name], { on, timeout: 5000 }).catch(() => null);
@@ -53,14 +70,17 @@ export async function profileFor(space, config) {
   const marker = await findUp(folder, MARKER, on);
   if (marker) {
     const name = (await readTextFile(marker, { on }).catch(() => null))?.trim();
-    if (name && config.profiles[name]) return name;
+    if (own(config.profiles, name)) return name;
   }
   // 2. The first rule that matches, in order.
   for (const rule of config.rules) {
-    if (!config.profiles[rule.profile]) continue; // not built yet: skip it
-    if (rule.path && !inside(folder, expand(rule.path, on))) continue;
-    if (rule.has && !(await findUp(folder, rule.has, on))) continue;
-    if (!rule.path && !rule.has) continue;
+    if (!own(config.profiles, rule.profile)) continue; // not built yet: skip it
+    const path = typeof rule.path === "string" && rule.path ? rule.path : null;
+    const has = typeof rule.has === "string" && rule.has ? rule.has : null;
+    if ((rule.path != null && !path) || (rule.has != null && !has)) continue; // not a folder or a name
+    if (!path && !has) continue;
+    if (path && !inside(folder, expand(path, on))) continue;
+    if (has && !(await findUp(folder, has, on))) continue;
     return rule.profile;
   }
   return config.default;
@@ -77,16 +97,24 @@ export default class Profiles extends View {
     this.busy = space.id;
     cx.spawn(async () => {
       try {
-        const config = await loadConfig();
-        const profile = await profileFor(space, config);
-        const name = config.profiles[profile]?.layout;
+        let config = { default: null, profiles: {}, rules: [] }, profile = null;
+        try {
+          config = await loadConfig();
+          profile = await profileFor(space, config);
+        } catch (e) {
+          console.log(`profiles: can't choose a profile: ${e}`);
+          profile = config.default;
+        }
+        const layout = own(config.profiles, profile) ? config.profiles[profile].layout : null;
+        const name = typeof layout === "string" ? layout : null;
         // The person may have moved on while we looked.
         if (spaces().find((s) => s.active)?.id !== space.id) return;
         setShared(HANDLED, space.id);
         setShared("profiles.active", profile ?? null);
         if (name && layouts().includes(name) && shared("layout") !== name) run("layout.switch", { name });
       } finally {
-        this.busy = null;
+        // Another space's check may have started meanwhile: that one is still busy.
+        if (this.busy === space.id) this.busy = null;
       }
     });
   }
