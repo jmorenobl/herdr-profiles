@@ -19,12 +19,12 @@ jobs:
         python: ["3.9", "3.12"]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7.0.1
 
       # macOS's own /usr/bin/python3 (Xcode's) is 3.9, the oldest Python the
       # tool supports and the one a Mac without Homebrew has: use it there.
       - if: ${{ !(runner.os == 'macOS' && matrix.python == '3.9') }}
-        uses: actions/setup-python@v5.6.0
+        uses: actions/setup-python@v7.1.0
         with:
           python-version: ${{ matrix.python }}
       - name: Pick the Python
@@ -35,7 +35,7 @@ jobs:
           echo "PY=$py" >> "$GITHUB_ENV"
 
       # The ideas mod's tests run under node (skipped without it).
-      - uses: actions/setup-node@v4.4.0
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: "22"
 

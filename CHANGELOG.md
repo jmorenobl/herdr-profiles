@@ -2,6 +2,8 @@
 
 ## 0.9.4 — 2026-11-10
 
+- CI: actions on Node 24 (GitHub retires Node 20): checkout v7.0.1,
+  setup-python v7.1.0, setup-node v7.1.0, still pinned by exact tag.
 - Installer: a profile's keys can go in its own layout's section
   (`layout:<name>`), which is where keys for one window belong; `global`
   stays for keys that must work from any space (ideas' `ctrl-shift-i`, so
