@@ -14,6 +14,11 @@ Install reads and checks both files, asks, and works out the whole merge
 before it writes anything (`plan_first_time`), then writes it last
 (`Merge.apply`): a broken file or a stop at a question leaves the home as it was.
 
+Both files are changed with the smallest textual edit (jsonedit): the person's formatting stays,
+and an uninstall that takes back all an install added leaves the file as it was (but an object
+that was empty and written on several lines, which comes back as "{}"). The top-level keys install
+added to profiles.json ("config_keys") go again on uninstall once they're empty.
+
 What it added is recorded in the manifest ("added", see manifest.py), exactly
 as added; for a profile installed before 0.8.0, what is still exactly as it
 would have been added is recognised and recorded by the next install
@@ -28,7 +33,8 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
-from .files import load_json, write_json
+from . import jsonedit
+from .files import atomic_write, dump_json, load_json
 from .home import Home
 from .spec import PLACEHOLDER, Package, SpecError
 
@@ -148,6 +154,16 @@ def fill(rule: dict, values: dict[str, str]) -> dict:
     return {k: PLACEHOLDER.sub(lambda m: values[m.group(1)], v) if isinstance(v, str) else v for k, v in rule.items()}
 
 
+TOP = ("default", "profiles", "rules")  # what install may add to profiles.json at the top
+
+
+def read_text(path) -> str | None:
+    try:
+        return path.read_bytes().decode("utf-8")  # not read_text: "\r\n" stays as it is
+    except FileNotFoundError:
+        return None
+
+
 @dataclass
 class Merge:
     """What install will write into the person's files, worked out before any file is written."""
@@ -158,17 +174,38 @@ class Merge:
     keys_changed: bool = False
     lines: list[str] = field(default_factory=list)
     delete_config: bool = False  # uninstall: profiles.json was created by install and is empty again
+    texts: dict = field(default_factory=dict)  # each file's text as read: what the edits start from
 
-    def apply(self) -> int:
+    def __post_init__(self):
+        for path in (self.home.profiles_path, self.home.keys_path):
+            self.texts.setdefault(path.name, read_text(path))
+
+    def planned(self) -> dict[str, bytes | None]:
+        """{"profiles.json" | "keys.json": the bytes `apply` will write, or None: it deletes it},
+        for each file it changes. The person's own formatting is kept (jsonedit)."""
+        out: dict[str, bytes | None] = {}
+        if self.delete_config:
+            out[self.home.profiles_path.name] = None
+        elif self.config_changed:
+            out[self.home.profiles_path.name] = self.text(self.home.profiles_path.name, self.config)
+        if self.keys_changed:
+            out[self.home.keys_path.name] = self.text(self.home.keys_path.name, self.keys)
+        return out
+
+    def text(self, name: str, data: Any) -> bytes:
+        before = self.texts.get(name)
+        return dump_json(data) if before is None else jsonedit.update(before, data).encode()
+
+    def apply(self, planned: dict[str, bytes | None] | None = None) -> int:
         """Writes the files and prints what changed. Returns how many files changed (0-2)."""
         for line in self.lines:
             print(line)
-        if self.delete_config:
-            self.home.profiles_path.unlink(missing_ok=True)
-        elif self.config_changed:
-            write_json(self.home.profiles_path, self.config)
-        if self.keys_changed:
-            write_json(self.home.keys_path, self.keys)
+        planned = self.planned() if planned is None else planned
+        for name, data in planned.items():
+            if data is None:
+                self.home.file(name).unlink(missing_ok=True)
+            else:
+                atomic_write(self.home.file(name), data)
         return int(self.config_changed) + int(self.keys_changed)
 
 
@@ -182,10 +219,15 @@ def plan_first_time(packages: list[Package], home: Home, manifest: dict,
     keys = load_keys(home) if keys is ... else keys
     merge = Merge(home, config, keys)
     known: list[str] = manifest.setdefault("profiles", [])
+    # "config_keys" is kept from a home's first install on; a manifest from before 0.9.2 never
+    # had it, and then it stays unknown (what an older install added isn't known).
+    tracked = "config_keys" in manifest or not known
     if not home.profiles_path.exists() and any(p.name not in known for p in packages):
         created = manifest.setdefault("created", [])
         if "profiles.json" not in created:
             created.append("profiles.json")
+    raw = merge.texts.get(home.profiles_path.name)
+    had = set(json.loads(raw)) if raw is not None else set()  # load_config checked it's an object
     for pkg in packages:
         if pkg.name in known:
             continue
@@ -228,6 +270,9 @@ def plan_first_time(packages: list[Package], home: Home, manifest: dict,
         merge.keys_changed |= merge_keys(pkg, keys, merge.lines, record["keys"])
         merge.config_changed = True
         merge.lines.append(f"  profile   {pkg.name} {'added to' if added else 'already in'} profiles.json")
+    if merge.config_changed and tracked:
+        top = manifest.setdefault("config_keys", [])
+        top.extend(k for k in TOP if k in config and k not in had and k not in top)
     return merge
 
 
@@ -357,15 +402,33 @@ def plan_removal(names: list[str], home: Home, manifest: dict, packages: list[Pa
                 del keys[k["section"]]
             merge.keys_changed = True
             merge.lines.append(f"  removed   key {k['key']} -> {k['action']}")
+    if everything and config is not None:
+        drop_empty_tops(config, manifest, merge)
     if not everything and config is not None and config.get("default") in names:
         merge.lines.append(f"  note      profiles.json: \"default\" is still {config['default']!r}, which isn't"
                            " installed now; set it to an installed profile")
     if (everything and config is not None and "profiles.json" in manifest.get("created", [])
             and set(config) <= {"default", "profiles", "rules"} and not config.get("default")
-            and not config["profiles"] and not config["rules"]):
+            and not config.get("profiles") and not config.get("rules")):
         merge.delete_config = True
         merge.lines.append("  removed   profiles.json (install created it; nothing is left in it)")
     return merge
+
+
+def drop_empty_tops(config: dict, manifest: dict, merge: Merge) -> None:
+    """On a full uninstall, the top-level keys install added to profiles.json ("config_keys") go
+    once empty (null, {} or []), so the person's file is left as they had it. A manifest from before 0.9.2 doesn't say
+    which those were: then any of them left empty goes, but only when uninstall changes the file
+    anyway (an install before 0.8.0 wrote all three)."""
+    known = manifest.get("config_keys")
+    if known is None and not merge.config_changed:
+        return
+    for k in list(TOP if known is None else known):
+        if k in config and config[k] in (None, {}, []):
+            del config[k]
+            merge.config_changed = True
+            if known is not None:
+                known.remove(k)
 
 
 def take_back_config(name: str, record: dict, config: dict, merge: Merge) -> None:
