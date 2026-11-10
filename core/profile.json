@@ -1,0 +1,10 @@
+{
+  "schema": 2,
+  "name": "standard",
+  "description": "Herdr's main window plus the invisible profile switcher. The default profile.",
+  "default": true,
+  "layout": {
+    "name": "standard",
+    "source": "layouts/standard.json"
+  }
+}

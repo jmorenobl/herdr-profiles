@@ -1,0 +1,19 @@
+herdr-profiles
+Copyright 2026 The herdr-profiles authors
+
+This product is licensed under the Apache License, Version 2.0 (LICENSE).
+
+It includes work derived from Herdr (https://herdr.dev,
+https://github.com/herdrdev/herdr-app), also under the Apache License,
+Version 2.0. These files were cloned from Herdr 0.1.14 and changed:
+
+- core/layouts/standard.json: Herdr's `main` layout. The install build adds
+  the profile switcher to it.
+- core/mods/standard-files/: Herdr's `files` mod. Markdown files open
+  rendered, with links and images.
+- core/mods/standard-tabs/: Herdr's `tabs` mod. A History button.
+
+The SVG icons in core/mods/standard-files/, core/mods/standard-history/ and
+core/mods/standard-tabs/ are Lucide icons (https://lucide.dev), as shipped
+with Herdr: ISC License, some derived from Feather under the MIT License.
+Full notices: LICENSES/Lucide.txt.

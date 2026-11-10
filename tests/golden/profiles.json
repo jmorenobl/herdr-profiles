@@ -1,0 +1,18 @@
+{
+  "default": "standard",
+  "profiles": {
+    "standard": {
+      "layout": "standard"
+    },
+    "ideas": {
+      "layout": "ideas",
+      "folder": "~/ideas"
+    }
+  },
+  "rules": [
+    {
+      "path": "~/ideas",
+      "profile": "ideas"
+    }
+  ]
+}

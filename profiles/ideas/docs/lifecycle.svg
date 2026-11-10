@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="300" viewBox="0 0 880 300" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#9c8b78"/>
+    </marker>
+    <marker id="arrow-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#b5652b"/>
+    </marker>
+  </defs>
+  <rect width="880" height="300" rx="16" fill="#fbf6ee"/>
+
+  <!-- capture -->
+  <text x="40" y="44" font-size="12" fill="#9c8b78">ctrl-shift-i</text>
+  <path d="M60 54 L60 92" stroke="#9c8b78" stroke-width="1.6" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- open statuses -->
+  <g font-size="14" font-weight="600" fill="#3a3027">
+    <rect x="20" y="100" width="150" height="56" rx="12" fill="#ffffff" stroke="#e2d5c3"/>
+    <circle cx="42" cy="128" r="6" fill="#a8741a"/><text x="56" y="133">Seed</text>
+    <rect x="240" y="100" width="150" height="56" rx="12" fill="#ffffff" stroke="#e2d5c3"/>
+    <circle cx="262" cy="128" r="6" fill="#3f6a8a"/><text x="276" y="133">Exploring</text>
+    <rect x="460" y="100" width="150" height="56" rx="12" fill="#ffffff" stroke="#e2d5c3"/>
+    <circle cx="482" cy="128" r="6" fill="#b5652b"/><text x="496" y="133">Ripe</text>
+    <rect x="700" y="100" width="160" height="56" rx="12" fill="#ffffff" stroke="#e2d5c3"/>
+    <circle cx="722" cy="128" r="6" fill="#5f7d3a"/><text x="736" y="133">Active</text>
+  </g>
+  <g font-size="11" fill="#9c8b78">
+    <text x="56" y="149">just captured</text>
+    <text x="276" y="149">thinking it through</text>
+    <text x="496" y="149">clear enough to start</text>
+    <text x="736" y="149">a project exists</text>
+  </g>
+  <g stroke="#9c8b78" stroke-width="1.6" fill="none">
+    <path d="M172 128 L236 128" marker-end="url(#arrow)"/>
+    <path d="M392 128 L456 128" marker-end="url(#arrow)"/>
+    <path d="M612 128 L696 128" marker-end="url(#arrow)"/>
+  </g>
+  <g font-size="11" fill="#6e5f50" text-anchor="middle">
+    <text x="204" y="118">develop</text>
+    <text x="424" y="118">summary</text>
+    <text x="655" y="118">Start project</text>
+  </g>
+
+  <!-- the weekly review -->
+  <rect x="20" y="186" width="590" height="34" rx="10" fill="#f3e3cf" stroke="#d9b48f" stroke-dasharray="4 3"/>
+  <text x="315" y="207" font-size="12" fill="#8a5a2b" text-anchor="middle">untouched for 30+ days → faded on the board → the weekly review asks: keep going, park or drop?</text>
+
+  <!-- closed statuses -->
+  <g font-size="14" font-weight="600" fill="#3a3027">
+    <rect x="200" y="240" width="150" height="44" rx="12" fill="#efe6d8" stroke="#e2d5c3"/>
+    <circle cx="222" cy="262" r="6" fill="#6e5f50"/><text x="236" y="267">Parked</text>
+    <rect x="400" y="240" width="210" height="44" rx="12" fill="#efe6d8" stroke="#e2d5c3"/>
+    <circle cx="422" cy="262" r="6" fill="#9c8b78"/><text x="436" y="267">Dropped</text>
+  </g>
+  <g font-size="11" fill="#9c8b78">
+    <text x="290" y="267">not now</text>
+    <text x="510" y="267">+ one line why</text>
+  </g>
+  <g stroke="#b5652b" stroke-width="1.6" fill="none">
+    <path d="M275 222 L275 236" marker-end="url(#arrow-accent)"/>
+    <path d="M505 222 L505 236" marker-end="url(#arrow-accent)"/>
+  </g>
+  <g stroke="#9c8b78" stroke-width="1.4" fill="none">
+    <path d="M95 158 L95 184"/>
+    <path d="M315 158 L315 184"/>
+    <path d="M535 158 L535 184"/>
+  </g>
+  <text x="660" y="262" font-size="11" fill="#9c8b78">the toggle “Parked &amp; dropped”</text>
+  <text x="660" y="277" font-size="11" fill="#9c8b78">shows them on the board</text>
+</svg>

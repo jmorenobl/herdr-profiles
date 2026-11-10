@@ -1,0 +1,50 @@
+# The tool's tests on Linux and macOS, Python 3.9 and 3.12; JSON, profiles and
+# layouts checked. No Herdr here: `herdr-app check` on the mods is a local check
+# (CONTRIBUTING.md, "Checks: local and CI"); `make check` skips it without herdr-app.
+name: test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.9", "3.12"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      # macOS's own /usr/bin/python3 (Xcode's) is 3.9, the oldest Python the
+      # tool supports and the one a Mac without Homebrew has: use it there.
+      - if: ${{ !(runner.os == 'macOS' && matrix.python == '3.9') }}
+        uses: actions/setup-python@v5.6.0
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Pick the Python
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = macOS ] && [ "${{ matrix.python }}" = 3.9 ]; then py=/usr/bin/python3; else py=python; fi
+          "$py" -c 'import sys; v = "%d.%d" % sys.version_info[:2]; print(sys.executable, v); assert v == "${{ matrix.python }}", v'
+          echo "PY=$py" >> "$GITHUB_ENV"
+
+      # The ideas mod's tests run under node (skipped without it).
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: "22"
+
+      - name: JSON files are valid
+        shell: bash
+        run: git ls-files -z '*.json' | xargs -0 -n1 "$PY" -m json.tool > /dev/null
+
+      - name: Profiles and layouts (make check, without herdr-app)
+        run: make check PY="$PY"
+
+      - name: Tests
+        run: make test PY="$PY"

@@ -1,0 +1,6 @@
+{
+  "global": {
+    "cmd-p": "mod.open:picker",
+    "ctrl-shift-i": "mod.open:ideas"
+  }
+}

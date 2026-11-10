@@ -1,0 +1,6 @@
+.DS_Store
+__pycache__/
+*.pyc
+# Herdr writes these into mod folders
+gpui-kit.d.ts
+jsconfig.json

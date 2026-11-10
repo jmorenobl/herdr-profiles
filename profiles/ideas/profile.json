@@ -1,0 +1,49 @@
+{
+  "schema": 2,
+  "name": "ideas",
+  "description": "An idea inbox: a board of ideas by status, and quick capture from any space.",
+  "layout": {
+    "name": "ideas",
+    "base": "standard",
+    "insert": [
+      {
+        "into": "work-body",
+        "after": "main",
+        "node": {
+          "id": "ideas-side",
+          "type": "block",
+          "size": {
+            "px": 420
+          },
+          "min": 300,
+          "max": 720,
+          "content": {
+            "mod": "ideas"
+          }
+        }
+      }
+    ],
+    "set": {
+      "theme": "ideas",
+      "preview": "layouts/ideas.svg"
+    }
+  },
+  "ask": [
+    {
+      "setting": "folder",
+      "question": "Where do your ideas live?",
+      "default": "~/ideas",
+      "kind": "folder"
+    }
+  ],
+  "rules": [
+    {
+      "path": "{folder}"
+    }
+  ],
+  "keys": {
+    "global": {
+      "ctrl-shift-i": "mod.open:ideas"
+    }
+  }
+}
