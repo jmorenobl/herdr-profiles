@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- README: a banner on top, the profiles as a deck of cards (`standard`,
+  `ideas`, and one face down for the next). It's a page,
+  `docs/banner/banner.html`, that `make banner` renders to
+  `docs/banner.png` with headless Chrome; adding a profile now includes
+  dealing its card (CONTRIBUTING, "Adding a profile"). The ideas board
+  screenshot moved to the ideas section.
+
 ## 0.9.4 — 2026-11-10
 
 - Keeping up with Herdr: `upstream/` keeps Herdr 0.1.14's originals of what

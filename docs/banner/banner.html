@@ -1,0 +1,144 @@
+<!doctype html>
+<!--
+  The README's banner: the profiles as a deck of cards.
+  `make banner` renders this page to docs/banner.png with headless Chrome.
+  A new profile: add a <div class="card"> to the deck (copy one), with its
+  name, one line, a screenshot from its docs/ and its theme's colors in
+  the style attribute; then spread the deck (--i, --n) and `make banner`.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root { --w: 1280px; --h: 600px; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: var(--w); height: var(--h); background: transparent; }
+  body {
+    font: 14px/1.35 -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    display: grid; place-items: center;
+  }
+
+  /* The table the deck lies on. */
+  .table {
+    position: relative; width: calc(var(--w) - 16px); height: calc(var(--h) - 16px);
+    border-radius: 28px; overflow: hidden;
+    background:
+      radial-gradient(ellipse 70% 80% at 50% 105%, #3b4a44 0%, transparent 70%),
+      radial-gradient(ellipse 60% 60% at 15% 0%, #2c3a35 0%, transparent 70%),
+      #1f2a26;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.06);
+  }
+  .table::after { /* felt grain */
+    content: ""; position: absolute; inset: 0; opacity: .5;
+    background-image: radial-gradient(rgba(255,255,255,.035) 1px, transparent 1px);
+    background-size: 4px 4px;
+  }
+  .title {
+    position: absolute; left: 56px; top: 50px; z-index: 5; color: #f3ede3;
+  }
+  .title h1 { font-size: 40px; font-weight: 700; letter-spacing: -.02em; }
+  .title p { margin-top: 8px; font-size: 18px; color: #b9c2bc; max-width: 300px; line-height: 1.4; }
+  .title code {
+    display: inline-block; margin-top: 22px; padding: 7px 12px; border-radius: 8px;
+    font: 13px "SF Mono", Menlo, monospace; color: #e7dccb;
+    background: rgba(255,255,255,.07); box-shadow: inset 0 0 0 1px rgba(255,255,255,.1);
+  }
+
+  /* The deck: cards fanned around a point below the table. */
+  .deck { position: absolute; left: 515px; top: 80px; width: 600px; height: 520px; }
+  .card {
+    --spread: 9deg; --step: 160px;
+    position: absolute; left: 50%; top: 0; width: 288px; height: 416px;
+    margin-left: -144px; padding: 16px; border-radius: 18px;
+    display: flex; flex-direction: column; gap: 12px;
+    color: var(--fg); background: var(--surface);
+    box-shadow: 0 1px 0 rgba(255,255,255,.6) inset, 0 0 0 1px rgba(0,0,0,.25),
+                0 18px 40px rgba(0,0,0,.45), 0 4px 10px rgba(0,0,0,.3);
+    transform-origin: 50% 220%;
+    transform: translateX(calc((var(--i) - (var(--n) - 1) / 2) * var(--step)))
+               rotate(calc((var(--i) - (var(--n) - 1) / 2) * var(--spread)));
+  }
+  .card header { display: flex; align-items: baseline; justify-content: space-between; }
+  .card .name { font: 600 19px "SF Mono", Menlo, monospace; letter-spacing: -.01em; }
+  .card .pip {
+    width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
+    background: var(--accent); color: var(--accent-fg); align-self: center;
+  }
+  .card .pip svg { width: 17px; height: 17px; }
+  .card .line { margin-top: -6px; font-size: 14px; color: var(--muted); }
+  .card .shot {
+    flex: 1; min-height: 0; border-radius: 10px; overflow: hidden;
+    background: var(--chrome); box-shadow: 0 0 0 1px var(--border);
+  }
+  .card .shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .card footer { display: flex; gap: 6px; flex-wrap: wrap; }
+  .card footer span {
+    font-size: 12px; padding: 3px 9px; border-radius: 999px;
+    color: var(--muted); background: var(--chrome); box-shadow: inset 0 0 0 1px var(--border);
+  }
+
+  /* The card still face down: the next profile. */
+  .card.back {
+    background:
+      repeating-linear-gradient(45deg, rgba(255,255,255,.06) 0 2px, transparent 2px 12px),
+      repeating-linear-gradient(-45deg, rgba(255,255,255,.06) 0 2px, transparent 2px 12px),
+      linear-gradient(160deg, #e8743b, #b5652b 55%, #8a4a22);
+    padding: 14px;
+  }
+  .card.back .inner {
+    flex: 1; border-radius: 10px; display: grid; place-items: center; text-align: center;
+    box-shadow: inset 0 0 0 2px rgba(255,250,243,.55);
+    color: #fffaf3; font-size: 15px; font-weight: 600; letter-spacing: .02em;
+  }
+  .card.back .plus {
+    width: 64px; height: 64px; margin: 0 auto 12px; border-radius: 50%;
+    display: grid; place-items: center; background: rgba(255,250,243,.16);
+    box-shadow: inset 0 0 0 2px rgba(255,250,243,.6);
+  }
+</style>
+</head>
+<body>
+<div class="table">
+  <div class="title">
+    <h1>Herdr profiles</h1>
+    <p>One window per kind of project: a layout, a theme and panels for each, picked as you change space.</p>
+    <code>make install</code>
+  </div>
+
+  <div class="deck">
+    <!-- standard: Herdr's own light theme -->
+    <div class="card" style="--i:0; --n:3; --surface:#ffffff; --fg:#1d1d1f; --muted:#6b6b70;
+         --chrome:#f4f4f2; --border:#e3e3e0; --accent:#2f6fdf; --accent-fg:#fff;">
+      <header>
+        <span class="name">standard</span>
+        <span class="pip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><line x1="3" x2="9" y1="12" y2="12"/><line x1="15" x2="21" y1="12" y2="12"/></svg></span>
+      </header>
+      <p class="line">Every project, by default</p>
+      <div class="shot"><img src="../history.png" style="object-position: 50% 0"></div>
+      <footer><span>Files</span><span>History</span></footer>
+    </div>
+
+    <!-- ideas: its theme, themes/ideas.json -->
+    <div class="card" style="--i:1; --n:3; --surface:#fbf6ee; --fg:#3a3027; --muted:#6e5f50;
+         --chrome:#f3ebdf; --border:#e2d5c3; --accent:#b5652b; --accent-fg:#fffaf3;">
+      <header>
+        <span class="name">ideas</span>
+        <span class="pip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg></span>
+      </header>
+      <p class="line">An idea inbox, as a board</p>
+      <div class="shot"><img src="../../profiles/ideas/docs/board.png" style="width: 215%; height: auto; object-fit: initial"></div>
+      <footer><span>Board</span><span>Capture</span><span>Review</span></footer>
+    </div>
+
+    <!-- face down: the next one -->
+    <div class="card back" style="--i:2; --n:3;">
+      <div class="inner"><div>
+        <div class="plus"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></div>
+        more to come
+      </div></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

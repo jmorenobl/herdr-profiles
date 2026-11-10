@@ -1,4 +1,4 @@
-# Herdr profiles
+<h1 align="center"><img src="docs/banner.png" width="100%" alt="Herdr profiles: the standard and ideas profiles as a deck of cards, with one more face down"></h1>
 
 **One window per kind of project.** A book wants a quiet, warm page; an idea
 inbox wants a board; a repo wants its history at hand. Profiles give
@@ -10,8 +10,6 @@ project, and switch to the right one as you move between spaces.
 [![Herdr 0.1.14+](https://img.shields.io/badge/Herdr-0.1.14%2B-e8743b)](https://herdr.dev)
 ![macOS](https://img.shields.io/badge/platform-macOS-555)
 ![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-3776ab)
-
-<p align="center"><img src="profiles/ideas/docs/board.png" width="820" alt="The ideas profile: a board of ideas by status, and the selected idea's details"></p>
 
 ## How it feels
 
@@ -48,6 +46,8 @@ agent, or start a project from it.
   keep going, park or drop, one key each.
 - **Autocommit**: when the folder is a git repo, every change is committed
   after a quiet minute, with a subject naming the idea.
+
+<p align="center"><img src="profiles/ideas/docs/board.png" width="820" alt="The ideas profile: a board of ideas by status, and the selected idea's details"></p>
 
 <p align="center"><img src="profiles/ideas/docs/capture.png" width="400" alt="The New idea dialog"></p>
 

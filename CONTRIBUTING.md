@@ -106,6 +106,7 @@ scripts/herdr_profiles.py  install / status / pull / uninstall / check / upstrea
 scripts/profiletool/       the code behind it (stdlib only; module map in __init__.py)
 scripts/export_public.py   `make export`: a clean one-commit copy to publish
 tests/                     the tool's tests; tests/golden/ is what install must write
+docs/banner/banner.html    the README's banner: one card per profile (`make banner`)
 .github/workflows/         CI
 LICENSE, NOTICE, LICENSES/ Apache 2.0; what comes from Herdr and Lucide
 ```
@@ -192,6 +193,11 @@ leaves the recipe for you to change.
    and look at it in Herdr.
 6. If install's output changes on purpose, update `tests/golden/` (it's what
    install must write; never change it by accident).
+7. Deal it into the README's banner: in `docs/banner/banner.html`, copy a
+   card (name, one line, a screenshot from its `docs/`, its theme's colors),
+   number the cards `--i` from 0 and set `--n` to how many there are, keep
+   the face-down one last, then `make banner` (headless Chrome; `CHROME=` if
+   it isn't in `/Applications`) and look at `docs/banner.png`.
 
 ## Keeping up with Herdr
 
