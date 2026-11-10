@@ -121,7 +121,7 @@ export default class History extends View {
     if (!tips.head) { this.sig = null; this.setCommits([], false); this.error = "No commits yet"; return; }
     const list = await this.log(0, count);
     if (gen !== this.gen) return;
-    this.sig = tips.sig; this.setCommits(list.commits, list.more); this.error = null;
+    this.sig = tips.sig; this.setCommits(list.commits, list.more); this.error = null; this.moreError = null;
     // A commit that left the list (amend, reset, another branch) closes its details.
     if (this.open && !list.commits.some(c => c.hash === this.open.hash)) this.close();
   }
@@ -133,7 +133,7 @@ export default class History extends View {
     if (this.loading) { if (force) this.pending = true; else this.stale = true; return; }
     const { cwd, on } = location(), where = key();
     this.where = where; this.stale = false;
-    if (!cwd) { if (this.repo) this.reset(); return; }
+    if (!cwd) { if (this.repo || this.error) this.reset(); return; }
     this.loading = true;
     cx.spawn(async (cx) => {
       try {
@@ -209,7 +209,7 @@ export default class History extends View {
 
   // A partial clone with git older than 2.44 can't read a diff without downloading.
   canDiff() { return !this.partial || this.lazy !== null; }
-  failure(e) { return this.partial ? NOT_DOWNLOADED : e.message ?? String(e); }
+  failure(e) { const text = e.message ?? String(e); return this.partial ? `${NOT_DOWNLOADED} (${text})` : text; }
 
   pick(commit, cx) {
     this.close(); this.open = commit; this.picking = false;
@@ -226,8 +226,10 @@ export default class History extends View {
         // The subject is already in the header; the body is what's left.
         this.body = parseBody(message.stdout);
         if (!diff) { this.note = `${NOT_DOWNLOADED} Diffs here need git 2.44 or newer.`; return; }
-        for (const r of [numstat, status]) if (r.code !== 0) throw new Error(r.stderr.trim());
-        const files = parseFiles(numstat.stdout, status.stdout);
+        if (status.code !== 0) throw new Error(status.stderr.trim());
+        // A partial clone may lack a file's contents: list the files anyway, without counts.
+        if (numstat.code !== 0 && !this.partial) throw new Error(numstat.stderr.trim());
+        const files = parseFiles(numstat.code === 0 ? numstat.stdout : "", status.stdout);
         this.files = files.slice(0, MAX_FILES); this.limited = files.length > MAX_FILES;
         this.byPath = new Map(this.files.map(f => [f.path, f]));
         this.add = 0; this.del = 0;
