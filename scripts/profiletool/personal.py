@@ -15,8 +15,8 @@ before it writes anything (`plan_first_time`), then writes it last
 (`Merge.apply`): a broken file or a stop at a question leaves the home as it was.
 
 Both files are changed with the smallest textual edit (jsonedit): the person's formatting stays,
-and an uninstall that takes back all an install added leaves the file as it was (but an object
-that was empty and written on several lines, which comes back as "{}"). The top-level keys install
+and an uninstall that takes back all an install added leaves the file as it was (but an empty
+object with space inside, "{ }" or on several lines, which comes back as "{}"). The top-level keys install
 added to profiles.json ("config_keys") go again on uninstall once they're empty.
 
 What it added is recorded in the manifest ("added", see manifest.py), exactly
@@ -30,11 +30,14 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
 from . import jsonedit
-from .files import atomic_write, dump_json, load_json
+from pathlib import Path
+
+from .files import atomic_write, dump_json, load_json, notify
 from .home import Home
 from .spec import PLACEHOLDER, Package, SpecError
 
@@ -196,17 +199,29 @@ class Merge:
         before = self.texts.get(name)
         return dump_json(data) if before is None else jsonedit.update(before, data).encode()
 
-    def apply(self, planned: dict[str, bytes | None] | None = None) -> int:
-        """Writes the files and prints what changed. Returns how many files changed (0-2)."""
+    def apply(self, planned: dict[str, bytes | None] | None = None,
+              done: Callable[[str], None] | None = None) -> int:
+        """Writes the files and prints what changed; `done(name)` after each one (the journal).
+        Returns how many files changed (0-2)."""
         for line in self.lines:
             print(line)
         planned = self.planned() if planned is None else planned
         for name, data in planned.items():
-            if data is None:
-                self.home.file(name).unlink(missing_ok=True)
-            else:
-                atomic_write(self.home.file(name), data)
+            put(self.home.file(name), data)
+            if done:
+                done(name)
         return int(self.config_changed) + int(self.keys_changed)
+
+
+def put(path: Path, data: bytes | None) -> None:
+    """Writes a personal file (None: deletes it). Through a symlink, both times: the person's link
+    stays, and what changes is the file behind it."""
+    if data is None:
+        target = Path(os.path.realpath(path))
+        target.unlink(missing_ok=True)
+        notify("delete", target)
+    else:
+        atomic_write(path, data)
 
 
 def plan_first_time(packages: list[Package], home: Home, manifest: dict,

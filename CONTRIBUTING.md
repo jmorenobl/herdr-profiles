@@ -150,12 +150,14 @@ leaves the recipe for you to change.
   writing waits until the writes and the manifest are done.
 - A process killed while writing (not Ctrl-C: `kill -9`, a crash, power)
   loses nothing: a journal (`.herdr-profiles.pending.json`) holds the
-  manifest as it will be, and the next command recovers from it and says so.
+  manifest as it will be and the personal files' new text, marked after
+  each of them; the next command finishes and records what was done (or
+  drops it if nothing personal was written yet) and says so.
 - It edits `profiles.json` and `keys.json` with the smallest textual change
   (`scripts/profiletool/jsonedit.py`), so their formatting stays and an
   uninstall gives them back as they were. Not kept: a value that changes
   is rewritten whole in the file's style, new members go last, and an
-  empty object written on several lines comes back as `{}`; a file with
+  empty object with space inside (`{ }`, or on several lines) comes back as `{}`; a file with
   duplicate keys is rewritten whole in its own indentation.
 - It records which checkout installed (folder and branch, in the manifest).
   Another checkout (a worktree, a second clone) sharing the home stops

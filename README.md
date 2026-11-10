@@ -165,7 +165,9 @@ make uninstall                # everything
   only if nothing is left in it; one you had is left as you had it (the
   `"default"`, `"profiles"` or `"rules"` install added go too, once empty).
   The `layouts/`, `themes/` and `mods/` folders install made go too, if
-  nothing is left in them.
+  nothing is left in them. (Installed before 0.9.2? Those folders stay,
+  and any of `"default"`, `"profiles"`, `"rules"` left empty goes, since
+  which ones install added isn't known.)
 - The core (`standard`) can't be uninstalled while another profile is
   installed: uninstall that one first, or everything.
 - A profile you uninstall stays uninstalled: plain `make install` leaves it

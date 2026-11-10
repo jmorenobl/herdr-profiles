@@ -129,6 +129,20 @@ class CheckoutTest(HomeCase):
         self.assertIn("another checkout installed into this Herdr home last", r.stdout)
         self.assertEqual(self.written(), [])
 
+    def test_a_profile_lost_in_a_take_over_is_still_taken_back(self):
+        self.run_cmd("install")
+        repo, run = self.other()
+        shutil.rmtree(repo / "profiles" / "ideas")
+        r = run("install", "--take-over")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotIn("Nothing to install", r.stdout)  # it removed ideas' files
+        self.assertIn("Installed.", r.stdout)
+        r = run("uninstall")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("removed   key ctrl-shift-i -> mod.open:ideas", r.stdout)
+        self.assertEqual(self.json("keys.json"), {"global": {"cmd-p": "mod.open:picker"}})
+        self.assertFalse((self.home / "profiles.json").exists())
+
     def test_a_broken_checkout_record_is_an_error(self):
         self.run_cmd("install")
         manifest = self.json(".herdr-profiles.json")
@@ -168,21 +182,65 @@ class KilledTest(HomeCase):
         self.assertEqual([(k["key"], k["action"]) for k in added["keys"]], [IDEAS_KEY])
         self.assert_uninstall_takes_everything_back()
 
-    def test_killed_between_the_two_personal_files(self):
+    def test_killed_between_the_two_personal_files_is_rolled_forward(self):
         self.killed("/profiles.json", "install")
         r = self.run_cmd("install")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn("recovered", r.stdout)
-        self.assertIn("keys.json: what `install` meant to change there wasn't written", r.stdout)
-        self.assertNotIn("ctrl-shift-i", self.json("keys.json")["global"])
-        # uninstall still takes back what is there, and passes over the key that never was
+        self.assertIn("finished  keys.json: written now, as `install` meant to", r.stdout)
+        self.assertEqual(self.json("keys.json")["global"]["ctrl-shift-i"], "mod.open:ideas")
+        self.assert_uninstall_takes_everything_back()
+
+    def test_killed_between_the_two_in_an_uninstall_is_rolled_forward(self):
+        (self.home / "profiles.json").write_text('{"zz": 1}\n')  # theirs: a full uninstall writes it, not deletes
+        for args in (("uninstall", "ideas"), ("uninstall",)):
+            with self.subTest(args):
+                self.run_cmd("install")
+                self.killed("/profiles.json", *args)
+                r = self.run_cmd("status")
+                self.assertIn("finished  keys.json", r.stdout)
+                self.assertEqual(self.json("keys.json"), {"global": {"cmd-p": "mod.open:picker"}})
+                self.run_cmd("uninstall")
+                self.assertEqual((self.home / "profiles.json").read_text(), '{"zz": 1}\n')
+
+    def test_both_files_edited_after_the_kill(self):
+        self.killed("/keys.json", "install")  # both written; the journal marks profiles.json
+        for name, extra in (("keys.json", ("global", "ctrl-w", "close")), ("profiles.json", ("zz", None, 1))):
+            data = self.json(name)
+            if extra[1]:
+                data[extra[0]][extra[1]] = extra[2]
+            else:
+                data[extra[0]] = extra[2]
+            (self.home / name).write_text(json.dumps(data))
+        r = self.run_cmd("install")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("recovered the last `install`", r.stdout)
+        self.assertIn("keys.json: changed since it stopped", r.stdout)
+        r = self.run_cmd("uninstall")
+        self.assertEqual(self.json("keys.json"), {"global": {"cmd-p": "mod.open:picker", "ctrl-w": "close"}})
+        self.assertEqual(self.json("profiles.json"), {"zz": 1})
+        self.assertEqual(self.written(), [])
+
+    def test_killed_early_in_a_first_install_keeps_the_folders_it_made(self):
+        self.killed("layouts/standard.json", "install")
+        self.run_cmd("install")
+        self.assertEqual(sorted(self.json(".herdr-profiles.json")["folders"]), ["layouts", "mods", "themes"])
+        self.run_cmd("uninstall")
+        self.assertEqual(sorted(p.name for p in self.home.iterdir()), ["installed.json", "keys.json"])
+
+    def test_a_half_staged_mod_is_cleaned_up(self):
+        self.run_cmd("install", "standard")
+        self.killed(".ideas.staging/main.js", "install", "ideas")
+        self.assertTrue((self.home / "mods/.ideas.staging").is_dir())
+        r = self.run_cmd("status")
+        self.assertIn("removed   mods/.ideas.staging/", r.stdout)
+        self.assertFalse((self.home / "mods/.ideas.staging").exists())
         self.assert_uninstall_takes_everything_back()
 
     def test_killed_before_the_personal_files(self):
         self.killed("layouts/standard.json", "install")
         r = self.run_cmd("install")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn("before it changed profiles.json or keys.json; they're as they were", r.stdout)
+        self.assertIn("before it wrote profiles.json or keys.json; run `install` again", r.stdout)
         self.assertEqual(self.json("keys.json")["global"]["ctrl-shift-i"], "mod.open:ideas")
         self.assertIn("matches the repo", self.run_cmd("status").stdout)
         self.assert_uninstall_takes_everything_back()
@@ -310,6 +368,20 @@ class FormattingTest(HomeCase):
         self.assertEqual((self.home / "profiles.json").read_bytes(), before)
 
 
+class SymlinkedPersonalFileTest(HomeCase):
+    def test_a_dangling_profiles_json_link_stays_a_link(self):
+        target = Path(self.tmp.name + "-dot") / "profiles.json"
+        target.parent.mkdir()
+        self.addCleanup(shutil.rmtree, target.parent)
+        (self.home / "profiles.json").symlink_to(target)
+        self.run_cmd("install")
+        self.assertTrue(target.is_file())
+        r = self.run_cmd("uninstall")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertTrue((self.home / "profiles.json").is_symlink())  # the person's link, as they had it
+        self.assertFalse(target.exists())
+
+
 class FoldersTest(HomeCase):
     def test_a_full_uninstall_removes_the_empty_folders_install_made(self):
         self.run_cmd("install")
@@ -401,7 +473,8 @@ class WriteOrderTest(HomeCase):
     def test_the_journal_first_and_the_manifest_after_the_personal_files(self):
         writes = [e[1] for e in self.watched("install") if e[0] == "write"]
         self.assertEqual(writes[0], ".herdr-profiles.pending.json")
-        self.assertEqual(writes[-3:], ["profiles.json", "keys.json", ".herdr-profiles.json"])
+        journal = ".herdr-profiles.pending.json"  # marked after each personal file
+        self.assertEqual(writes[-5:], ["profiles.json", journal, "keys.json", journal, ".herdr-profiles.json"])
 
 
 class JsonEditTest(unittest.TestCase):

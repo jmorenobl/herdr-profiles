@@ -70,7 +70,11 @@ The installer, for daily use:
 - **Killed while writing.** A process killed between writing files and
   saving its record (`kill -9`, a crash) no longer loses what install added
   to `profiles.json` and `keys.json`: a journal is written first, and the
-  next command recovers from it and says so.
+  next command finishes what was cut short, records it and says so (also
+  for uninstall, and for a mod folder left half staged).
+- A full uninstall also takes back what was added for a profile no longer
+  installed (lost in a `--take-over`, or gone from the repo). A
+  `profiles.json` that is a symlink stays one.
 - **Your formatting stays.** `keys.json` and `profiles.json` get the
   smallest edit (one line more, in your indentation, tabs, CRLF or on one
   line), and an uninstall gives them back byte for byte.

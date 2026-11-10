@@ -39,28 +39,25 @@ unknown: a full uninstall then drops any of the three left empty, but only
 when it changes profiles.json anyway. Without "folders" none is removed.
 
 The journal (`.herdr-profiles.pending.json`, next to it) is written before
-install or uninstall writes anything, and deleted once the manifest is saved:
+install or uninstall writes anything, marked after each personal file is
+written, and deleted once the manifest is saved:
 
   {"version": 1, "command": "install",
    "after": {...} | null,                the manifest as it will be saved (null: deleted)
-   "expect": {"keys.json": "<sha256>" | null}}   each personal file it changes, as it will be
-                                         (null: deleted)
+   "expect": {"keys.json": "<sha256>" | null},   each personal file it changes, as it will be
+   "before": {"keys.json": "<sha256>" | null},   ... as it was (null: no file)
+   "content": {"keys.json": "<text>" | null},    ... what it writes (null: deletes it)
+   "written": ["profiles.json"]}         those written so far
 
-A process killed in between leaves it behind. The next run (`recover`) adopts
-"after" if any personal file is as expected (they're written last, so every
-other file was written too), and says which weren't; if none is, the
-personal files were never touched and the old manifest stays: the files
-install wrote are then exactly ours, which install recognises on its own.
-
-A profile installed before 0.8.0 is known (in "profiles") but has nothing in
-"added". Install then records, once, what is still exactly as that install
-would have added it (personal.recognise); what isn't stays unrecorded, and
-uninstall keeps it.
-
-Version 1 (before 0.8.0) has only "profiles" and "files", and always meant
-every profile was installed. It's read as: installed = its "profiles", owners
-= the repo's (a file the repo no longer has belongs to no profile), and
-nothing known about what was added: uninstall keeps those and says so.
+A process killed in between leaves it behind. The next run (`recover`):
+- a personal file written (marked, or as expected): every other file was
+  written before it, so "after" is adopted; a personal file still as it was
+  is written now (rolled forward); one changed since is left and said;
+- none written: the old manifest stays (plus the folders install made); the
+  files install wrote are exactly ours, which install recognises on its own;
+- a mod staging folder (`mods/.<mod>.staging`) left half written is removed.
+Not told apart: a file the person edited after a kill that came between its
+write and its mark (counted as not written).
 """
 
 from __future__ import annotations
@@ -116,24 +113,35 @@ def upgrade(data: dict[str, Any], repo_owners: dict[str, str]) -> dict[str, Any]
 JOURNAL_VERSION = 1
 
 
-def journal(command: str, after: dict[str, Any] | None, expect: dict[str, str | None]) -> dict[str, Any]:
-    return {"version": JOURNAL_VERSION, "command": command, "after": after, "expect": expect}
+def journal(command: str, after: dict[str, Any] | None, expect: dict[str, str | None],
+            before: dict[str, str | None], content: dict[str, str | None]) -> dict[str, Any]:
+    return {"version": JOURNAL_VERSION, "command": command, "after": after, "expect": expect,
+            "before": before, "content": content, "written": []}
 
 
 def check_journal(data: Any) -> bool:
+    names = ("profiles.json", "keys.json")
     return (isinstance(data, dict) and data.get("version") == JOURNAL_VERSION
             and isinstance(data.get("command"), str) and isinstance(data.get("expect"), dict)
-            and (data.get("after") is None or isinstance(data["after"], dict)))
+            and (data.get("after") is None or isinstance(data["after"], dict))
+            and set(data["expect"]) <= set(names)
+            and all(isinstance(data.get(k), dict) and set(data[k]) == set(data["expect"])
+                    for k in ("before", "content"))
+            and isinstance(data.get("written"), list))
 
 
-def recovered(data: dict[str, Any], now: dict[str, str | None]) -> tuple[bool, list[str]]:
-    """(whether the journal's "after" is what happened, the personal files it didn't get to),
-    given each expected file's hash now (None: no file)."""
-    expect = data["expect"]
-    done = [name for name in expect if now.get(name) == expect[name]]
-    if not expect:
-        return True, []
-    return bool(done), [name for name in expect if name not in done] if done else []
+def progress(data: dict[str, Any], now: dict[str, str | None]) -> dict[str, str]:
+    """Where each personal file the journal expected stands: "done" (marked written, or as
+    expected), "before" (still as it was: not written) or "changed" (neither: edited since)."""
+    out = {}
+    for name, want in data["expect"].items():
+        if name in data["written"] or now.get(name) == want:
+            out[name] = "done"
+        elif now.get(name) == data["before"][name]:
+            out[name] = "before"
+        else:
+            out[name] = "changed"
+    return out
 
 
 def same_checkout(recorded: Any, path: str) -> bool:

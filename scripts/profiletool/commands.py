@@ -200,7 +200,7 @@ def install(ctx: Context, names: list[str] | None = None, force: bool = False, s
     planned = merge.planned()
 
     with finish_first():
-        begin(ctx, "install", after, planned)
+        journal = begin(ctx, "install", after, planned)
         new_mods = stage_new_mods(items, ctx.home)
         # mod.json first: Herdr docks a mod folder it finds without one into the shown layout.
         changed = 0
@@ -218,13 +218,14 @@ def install(ctx: Context, names: list[str] | None = None, force: bool = False, s
                 print(f"  kept      {rel} (another file of this mod is kept, and a mod without one gets docked by Herdr)")
             elif sha(ctx.home.file(rel)) in (manifest[rel], None):
                 ctx.home.remove(rel)
+                changed += 1
                 print(f"  removed   {rel}")
             else:
                 print(f"  kept      {rel} (edited in Herdr; it's yours now, delete it yourself)")
 
         for line in recorded:
             print(line)
-        changed += merge.apply(planned)
+        changed += merge.apply(planned, marker(ctx, journal))
         finish(ctx, after)
     print("Installed." if changed else "Nothing to install: Herdr home matches the repo.")
     return 0
@@ -264,17 +265,31 @@ def other_checkout(ctx: Context, data: dict) -> dict | None:
 PERSONAL = ("profiles.json", "keys.json")
 
 
-def begin(ctx: Context, command: str, after: dict | None, planned: dict[str, bytes | None]) -> None:
+def begin(ctx: Context, command: str, after: dict | None, planned: dict[str, bytes | None]) -> dict | None:
     """Writes the journal before a write phase: the manifest as it will be, and each personal file
-    as it will be. Nothing to journal when no personal file changes (see manifest.py)."""
-    expect = {}
+    as it was and will be. Nothing to journal when no personal file changes (see manifest.py)."""
+    expect, before, content = {}, {}, {}
     for name, data in planned.items():
         path = ctx.home.file(name)
         now = path.read_bytes() if path.is_file() else None
         if data != now:
             expect[name] = None if data is None else sha_bytes(data)
-    if expect:
-        write_json(ctx.home.pending_path, manifest_mod.journal(command, after, expect))
+            before[name] = None if now is None else sha_bytes(now)
+            content[name] = None if data is None else data.decode()
+    if not expect:
+        return None
+    journal = manifest_mod.journal(command, after, expect, before, content)
+    write_json(ctx.home.pending_path, journal)
+    return journal
+
+
+def marker(ctx: Context, journal: dict | None):
+    """What Merge.apply calls after each personal file: the journal notes it was written."""
+    def done(name: str) -> None:
+        if journal is not None and name in journal["expect"]:
+            journal["written"].append(name)
+            write_json(ctx.home.pending_path, journal)
+    return done
 
 
 def finish(ctx: Context, after: dict | None) -> None:
@@ -287,31 +302,54 @@ def finish(ctx: Context, after: dict | None) -> None:
     ctx.home.pending_path.unlink(missing_ok=True)
 
 
+def clear_staging(home: Home, rels) -> None:
+    """Removes mod staging folders a killed install left (`mods/.<mod>.staging`) for these files' mods."""
+    for mod in sorted({rel.split("/")[1] for rel in rels if rel.startswith("mods/") and rel.count("/") >= 2}):
+        stage = home.file(f"mods/.{mod}.staging")
+        if stage.is_dir() and not stage.is_symlink():
+            shutil.rmtree(stage)
+            notify("delete", stage)
+            print(f"  removed   mods/.{mod}.staging/ (half written by an install that was killed)")
+
+
 def recover(ctx: Context) -> None:
-    """A journal left behind: the last install or uninstall was killed while writing. Records
-    what it did (manifest.py, "The journal"), and says so."""
+    """A journal left behind: the last install or uninstall was killed while writing. Finishes
+    and records what it did (manifest.py, "The journal"), and says so."""
     path = ctx.home.pending_path
     if not os.path.lexists(path):
         return
     fix = "move it away (the manifest then stays as it is)"
     data = ctx.home.load_checked(path, None, fix)
-    if not manifest_mod.check_journal(data) or not set(data["expect"]) <= set(PERSONAL):
+    if not manifest_mod.check_journal(data):
         raise spec.SpecError(f"{path}: not a journal this tool wrote; {fix}")
-    now = {name: sha(ctx.home.file(name)) for name in data["expect"]}
-    adopt, unwritten = manifest_mod.recovered(data, now)
+    old = ctx.home.load_manifest()
+    states = manifest_mod.progress(data, {name: sha(ctx.home.file(name)) for name in data["expect"]})
     command = data["command"]
+    changed = [n for n, st in states.items() if st == "changed"]
     with finish_first():
-        if adopt:
+        clear_staging(ctx.home, [*(data["after"] or {}).get("files", {}), *old.get("files", {})])
+        if "done" in states.values():
+            for name, st in states.items():
+                if st == "before":
+                    text = data["content"][name]
+                    personal.put(ctx.home.file(name), None if text is None else text.encode())
+                    print(f"  finished  {name}: written now, as `{command}` meant to")
             finish(ctx, data["after"])
             print(f"  recovered the last `{command}` was stopped (killed) before it saved what it did;"
-                  " recorded now")
-            for name in unwritten:
-                print(f"  note      {name}: what `{command}` meant to change there wasn't written;"
-                      f" check it (it's as you had it before)")
+                  " finished and recorded now")
+            for name in changed:
+                print(f"  note      {name}: changed since it stopped, so it's left as it is now; check"
+                      f" that what `{command}` meant to change there is in it")
         else:
+            made = [k for k in ((data["after"] or {}).get("folders") or []) if k not in old.get("folders", [])]
+            if made and data["after"] is not None:
+                old.setdefault("folders", []).extend(made)  # made by the killed install: still its
+                ctx.home.save_manifest(old)
             path.unlink(missing_ok=True)
-            print(f"  recovered the last `{command}` was stopped (killed) before it changed profiles.json"
-                  f" or keys.json; they're as they were. Run `{command}` again to finish it")
+            print(f"  recovered the last `{command}` was stopped (killed) before it wrote profiles.json"
+                  f" or keys.json; run `{command}` again to finish it")
+            for name in changed:
+                print(f"  note      {name}: changed since, but `{command}` hadn't written it yet")
 
 
 def mods_kept(rels: list[str], home: Home, files: dict[str, str]) -> set[str]:
@@ -471,7 +509,9 @@ def uninstall(ctx: Context, name: str | None = None) -> int:
     if not have and not data:
         print("Nothing to uninstall: nothing from this repo is installed in this Herdr home.")
         return 0
-    names = have if name is None else [name]
+    # A full uninstall takes back everything recorded, also for a profile no longer installed
+    # (the repo lost it, or another checkout without it took over).
+    names = [*have, *(n for n in data.get("added", {}) if n not in have)] if name is None else [name]
     owners = repo_owners(packages)
     files = data.get("files", {})
     rels = sorted(rel for rel in files if name is None or manifest_mod.owner(data, rel, owners) == name)
@@ -492,7 +532,7 @@ def uninstall(ctx: Context, name: str | None = None) -> int:
             after["uninstalled"].append(name)  # `install` with no names leaves it out from now on
     planned = merge.planned()
     with finish_first():
-        begin(ctx, "uninstall", after, planned)
+        journal = begin(ctx, "uninstall", after, planned)
         keeping = mods_kept(rels, ctx.home, files)
         for rel in rels:
             if ctx.home.linked(rel):
@@ -505,8 +545,9 @@ def uninstall(ctx: Context, name: str | None = None) -> int:
             else:
                 print(f"  kept      {rel} (edited in Herdr; it's yours now)")
         if name is None:
+            clear_staging(ctx.home, rels)
             remove_folders(ctx.home, data.get("folders", []))
-        merge.apply(planned)
+        merge.apply(planned, marker(ctx, journal))
         finish(ctx, after)
     print(f"Uninstalled {name or 'everything'}." + (f" `install` leaves it out from now on; `install {name}`"
                                                      " brings it back." if name else ""))

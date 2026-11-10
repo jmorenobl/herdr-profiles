@@ -7,7 +7,8 @@ Everything else (spacing, key order, escapes, the final newline) stays byte for 
 
 What isn't kept: a value that changes is rewritten whole in the file's style (an array is
 appended to or cut from only when the change is just that); new members go last, whatever order
-`new` has them in; and a file with duplicate keys, or any edit that wouldn't parse back to
+`new` has them in; the space inside an empty object or array ("{ }") once filled and emptied
+again (it comes back as "{}"); and a file with duplicate keys, or any edit that wouldn't parse back to
 `new`, is written whole instead, with the file's indentation (`rewrite`).
 """
 
