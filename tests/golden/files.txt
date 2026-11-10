@@ -26,6 +26,7 @@ mods/standard-history/down.svg
 mods/standard-history/history.svg
 mods/standard-history/main.js
 mods/standard-history/mod.json
+mods/standard-history/model.js
 mods/standard-tabs/main.js
 mods/standard-tabs/mod.json
 mods/standard-tabs/win-close.svg

@@ -41,6 +41,20 @@
   instead of inheriting the last space's panel.
 - README: what rules can't match (letter case, symlinks, `~` on another
   machine).
+- **History panel.** The list no longer breaks with `log.showSignature` set,
+  or with a 0x1F in a subject or an author; a subject written on two lines
+  isn't repeated in the body. A file's diff is that file's only (names like
+  `src[id].tsx` or `:colon` were read as patterns). Show more no longer
+  repeats commits when history moved meanwhile (it reads the list again),
+  nor adds the old branch's page after you pick another one. Moving to
+  another folder of the same repo keeps the open commit and what's loaded.
+  In a partial clone, opening a commit never downloads (git 2.44 or newer;
+  older git shows the message only) and says what isn't there. The "first
+  1,000 files" and "Cannot read more history" notes clear when they no longer
+  apply. Hidden, the panel stops reading git and catches up when shown; in a
+  worktree it also follows the refs shared with the main checkout; past 10
+  lanes, a commit's dot stays on the last lane with a mark. Watching another
+  repo and back no longer leaves extra watchers running.
 
 ## 0.9.2 — 2026-11-10
 
