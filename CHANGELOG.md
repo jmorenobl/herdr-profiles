@@ -22,10 +22,11 @@
   any script (`Straße` → `strasse`, `日本語` stays). Ideas are read in
   parallel on reload.
 - **Files panel, markdown images.** Only an image alone on its line is drawn
-  (a badge `[![CI](…)](link)` as one picture that opens its link); an image
-  in a table, a list or a row of badges shows its alt text, and images in
-  code (spans, fenced, indented) or HTML comments are left alone. Before,
-  every image was cut out, tearing tables and badges apart.
+  (a badge `[![CI](…)](link)` as one picture that opens its link; also a
+  list item's own paragraph or a quote's line); an image in a
+  table, a sentence or a row of badges shows its alt text (or file name),
+  and images in code (spans, fenced, indented) or HTML comments are left
+  alone. Before, every image was cut out, tearing tables and badges apart.
 - **Files panel.** `![](<a b.png>)` works; a link to a folder (`[docs](docs/)`)
   opens it in the tree instead of "Cannot preview"; at most 4 images load at
   once; a web image (a badge) is downloaded again every 6 hours (offline, the
@@ -34,8 +35,9 @@
 - **Switcher.** A `profiles.json` of the wrong shape (`"rules": {}`, a `null`
   rule or profile, not an object) falls back to the default instead of
   failing on every redraw; a remote space's `~` folder is looked up in that
-  machine's home and a relative one no longer hangs the lookup; two quick
-  space changes no longer check the same space twice.
+  machine's home and a relative one no longer hangs the lookup; a check
+  that ends after you moved on no longer lets another space be checked
+  twice at once.
 - **Tab bar.** After a layout switch (by hand or by the switcher), a space
   never seen before opens with the side panel closed, as Herdr's own does,
   instead of inheriting the last space's panel.

@@ -92,9 +92,9 @@ Rules compare folders as text, so:
 - **Symlinks aren't followed**: the folder is the one the terminal reports.
   If you reach a project through a symlink, write the rule for that path (or
   add a rule for each).
-- **`~` in `path` is this computer's home.** For a space on another machine,
-  write the full folder there (`/home/you/ideas`); `.herdr-profile` files
-  and `has` work there as here.
+- **`~` in `path` is this computer's home**, and isn't read at all for a
+  space on another machine: there, write the full folder
+  (`/home/you/ideas`). `.herdr-profile` files and `has` work there as here.
 
 Edits apply the next time you change space. A profile's own settings (like
 the ideas folder, or its [other options](profiles/ideas/README.md)) go in

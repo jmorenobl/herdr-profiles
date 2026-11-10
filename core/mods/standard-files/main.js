@@ -21,7 +21,8 @@ const isMarkdown = path => MARKDOWN.has(path?.split(".").pop()?.toLowerCase());
 // Copies $1 (a file, or a URL when $4 is "url") into the cache folder $2 as
 // <key>.$3 and prints that name. A file's key changes with its time and size, so
 // an edited image is shown fresh; a URL's every 6 hours, so a badge refreshes
-// (offline, its last download is used). Files unused for 30 days are removed.
+// (offline, its last download is used; older ones go). Files unused for 30 days
+// are removed.
 const CACHE = `src=$1 dir=$2 ext=$3
 if [ "$4" = url ]; then v=$(( $(date +%s) / 21600 )); else v=$(stat -c '%Y %s' "$src" 2>/dev/null || stat -f '%m %z' "$src") || exit 1; fi
 id=$(printf '%s' "$src" | cksum | cut -d' ' -f1)
@@ -31,7 +32,7 @@ mkdir -p "$dir" || exit 1
 if [ ! -s "$out" ]; then
   find "$dir" -type f -atime +30 -delete 2>/dev/null
   if [ "$4" = url ]; then
-    if ! curl -fsSL --max-time 20 --max-filesize 20000000 -o "$out.part" "$src"; then
+    if ! curl -fsSL --max-time 20 --max-filesize 20000000 -o "$out.part" "$src" || [ ! -s "$out.part" ]; then
       rm -f "$out.part"
       old=$(ls -t "$dir/$id"-*."$ext" 2>/dev/null | head -n 1)
       [ -n "$old" ] || exit 1
@@ -39,6 +40,7 @@ if [ ! -s "$out" ]; then
     fi
   else cp "$src" "$out.part" || exit 1; fi
   mv "$out.part" "$out"
+  if [ "$4" = url ]; then for f in "$dir/$id"-*."$ext"; do [ "$f" = "$out" ] || rm -f "$f"; done; fi
 fi
 printf '%s' "$key.$ext"`;
 
@@ -190,7 +192,7 @@ export default class Files extends View {
     if (!target || target === this.file) return;
     const context = this.context, from = this.file;
     cx.spawn(async cx => {
-      const r = await exec("sh", ["-c", 'test -d "$1"', "files", `${context.cwd}/${target}`], { on: context.on }).catch(() => null);
+      const r = await exec("sh", ["-c", 'test -d "$1"', "files", `${context.cwd}/${target}`], { on: context.on, timeout: 5000 }).catch(() => null);
       if (!this.current(context) || this.file !== from) return;
       if (r?.code === 0) this.reveal(target, cx);
       else { this.history.push(from); this.show(target, cx); }

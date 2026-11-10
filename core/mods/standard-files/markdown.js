@@ -3,12 +3,12 @@
 
 // Markdown's images: ![alt](src "title") with src bare or in <angle brackets>,
 // a linked one [![alt](src)](link), and HTML's <img src=…>.
-const DEST = String.raw`\s*(?:<([^<>\n]*)>|([^\s()<>]+))(?:\s+(?:"[^"]*"|'[^']*'|\([^()]*\)))?\s*\)`;
+const DEST = String.raw`\s*(?:<([^<>\n]*)>|((?:[^\s()<>]|\([^\s()<>]*\))+))(?:\s+(?:"[^"]*"|'[^']*'|\([^()]*\)))?\s*\)`;
 const IMG = String.raw`(?<!\\)!\[((?:[^\[\]\\]|\\.)*)\]\(` + DEST;
 const LINKED = String.raw`\[\s*` + IMG + String.raw`\s*\]\(` + DEST;
-const HTML_IMG = String.raw`<img\b[^>]*>`;
+const HTML_IMG = String.raw`<img\b[^<>\n]{0,2000}>`; // bounded: a long line of "<img" stays fast
 const ANY = new RegExp(`${LINKED}|${IMG}|${HTML_IMG}`, "gi");
-const attr = (tag, name) => tag.match(new RegExp(String.raw`\s${name}\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))`, "i"))?.slice(1).find(v => v !== undefined) ?? null;
+const attr = (tag, name) => tag.match(new RegExp(String.raw`\s${name}\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+?))(?=\s|\/?>|$)`, "i"))?.slice(1).find(v => v !== undefined) ?? null;
 
 // One image unit as { alt, src, link? }, or null when `m` (a match of ANY) is none.
 function unit(m) {
@@ -20,7 +20,7 @@ function unit(m) {
 
 // A line that is only one image (with an optional link, and for HTML optional
 // <p>/<div>/<center> and <a href> around it): that image, else null.
-const WRAP = /^(?:<(?:p|div|center)\b[^>]*>\s*)*(?:<a\b([^>]*)>\s*)?(<img\b[^>]*>)\s*(?:<\/a>\s*)?(?:<\/(?:p|div|center)>\s*)*$/i;
+const WRAP = /^(?:<(?:p|div|center)\b[^>]*>\s*)*(?:<a\b([^>]*)>\s*)?(<img\b[^<>\n]{0,2000}>)\s*(?:<\/a>\s*)?(?:<\/(?:p|div|center)>\s*)*$/i;
 function blockImage(line) {
   const s = line.trim();
   const md = s.match(new RegExp(`^(?:${LINKED}|${IMG})$`, "i"));
@@ -77,17 +77,21 @@ function inlineText(line, ranges) {
     if (ranges.some(([a, b]) => at < b && at + whole.length > a)) return whole;
     const u = unit(args);
     if (!u) return whole;
-    return u.link !== undefined ? `[${u.alt}](${args[4] !== undefined ? `<${args[4]}>` : u.link})` : u.alt;
+    const alt = u.alt || u.src.replace(/[?#].*$/, "").split("/").filter(Boolean).pop() || "image";
+    return u.link !== undefined ? `[${alt}](${args[4] !== undefined ? `<${args[4]}>` : u.link})` : alt;
   });
 }
 
-const FENCE = /^\s*(`{3,}|~{3,})/;
+const FENCE = /^(\s*)(`{3,}|~{3,})/;
+const BREAK = /^ {0,3}(?:#{1,6}(?:\s|$)|([-*_])(?:\s*\1){2,}\s*$)/; // a heading or a thematic break
+const QUOTE = /^ {0,3}>\s?/;
 const LIST = /^ {0,3}(?:[-*+]|\d{1,9}[.)])(?:\s|$)/;
 const INDENTED = /^(?: {4}|\t| {1,3}\t)/;
 
 // Markdown split around its images, which TextView doesn't draw: text parts and
 // { alt, src, link? } parts. Only an image alone on its line (a block image) is
-// split out; one in running text (a table, a list, a badge row) becomes its alt
+// split out (also a list item's own paragraph, a quote's line); one in running
+// text (a table, a sentence, a badge row) becomes its alt
 // text. Code (fenced, indented, spans) and HTML comments are left alone.
 export function splitImages(md) {
   const parts = [];
@@ -100,10 +104,14 @@ export function splitImages(md) {
       text += line + "\n";
       continue;
     }
+    const indent = line.match(/^[ \t]*/)[0].replace(/\t/g, "    ").length;
     if (!comment) {
+      if (BREAK.test(line)) list = false;
+      // A fence: up to 3 spaces in, or more inside a list item (else it's indented code).
       const f = line.match(FENCE);
-      if (f && !(f[1][0] === "`" && line.slice(line.indexOf(f[1]) + f[1].length).includes("`"))) {
-        fence = f[1]; text += line + "\n"; prev = "code";
+      if (f && (indent <= 3 || list) && !(f[2][0] === "`" && line.slice(f[0].length).includes("`"))) {
+        if (!indent) list = false;
+        fence = f[2]; text += line + "\n"; prev = "code";
         continue;
       }
       // Indented code: after a blank line (or more code), outside a list.
@@ -116,10 +124,13 @@ export function splitImages(md) {
     const m = masked(line, comment);
     comment = m.comment;
     if (!blank && !startsInComment) {
-      if (LIST.test(line)) list = true;
-      else if (!/^\s/.test(line) && prev === "blank") list = false;
+      if (LIST.test(line) && !BREAK.test(line)) list = true;
+      else if (!indent && prev === "blank") list = false;
     }
-    const block = !startsInComment && !m.ranges.length && !list && !/^ {4}|^\t/.test(line) ? blockImage(line) : null;
+    // A block image: alone on its line (or alone in a quote's line), and in a
+    // list only as an item's own paragraph (indented, after a blank line).
+    const where = list ? indent > 0 && prev === "blank" : indent <= 3;
+    const block = !startsInComment && !m.ranges.length && where ? blockImage(line.replace(QUOTE, "")) : null;
     if (block) {
       if (text.trim()) parts.push(text);
       text = "";

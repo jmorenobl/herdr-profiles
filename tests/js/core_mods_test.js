@@ -30,7 +30,23 @@ const md = {
   html: '<p align="center"><img src="logo.png" alt="Logo" width="100"></p>\n',
   htmlLinked: '<a href="https://x.test"><img src="b.svg"></a>\n',
   escaped: "\\![no](x.png)\n",
+  listItem: "1. step\n\n   ![shot](shot.png)\n\n2. next\n",
+  lazy: "- item\n  ![lazy](l.png)\n",
+  quote: "> ![q](q.png)\n",
+  emptyAlt: "[![](a.svg)](https://x.test/ci) ![](img/b.png)\n",
+  afterList: "- a\n# Heading\n![x](x.png)\n",
+  afterBreak: "* * *\n![x](x.png)\n",
+  indentedFence: "para\n\n    ```\n\nText\n\n![x](x.png)\n",
+  listFence: "- a\n\n  ```\n  ![f](f.png)\n  ```\n",
+  parens: "![a](foo_(bar).png)\n",
+  selfClosing: "<img src=x alt=x/>\n",
 };
+out.slow = {};
+for (const l of ["<img ", "<img src=x ", "![a](", "[![a](b)"]) {
+  const t = Date.now();
+  splitImages(l.repeat(Math.ceil(400000 / l.length)));
+  out.slow[l] = Date.now() - t;
+}
 out.split = Object.fromEntries(Object.entries(md).map(([k, v]) => [k, splitImages(v)]));
 out.links = {
   folder: linkTarget("docs/", "/r", "README.md"),

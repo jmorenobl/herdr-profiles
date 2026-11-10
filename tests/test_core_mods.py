@@ -78,7 +78,6 @@ class CoreModsTest(unittest.TestCase):
     def test_images_in_tables_and_lists_become_their_alt_text(self):
         self.assertText("table", "| x | y |", "|---|---|")
         self.assertText("list", "- item i more\n- next")
-        self.assertText("listBlock", "- item\n\n  i\n- next")
         self.assertText("inline", "See logo here.")
         self.assertText("continuation", "Text\n    cont")
 
@@ -101,6 +100,26 @@ class CoreModsTest(unittest.TestCase):
         self.assertIn("After", after)
         self.assertEqual(self.split("html"), [picture("Logo", "logo.png")])
         self.assertEqual(self.split("htmlLinked"), [picture("", "b.svg", "https://x.test")])
+
+    def test_block_images_in_lists_and_quotes(self):
+        self.assertEqual(self.split("listItem")[1], picture("shot", "shot.png"))
+        self.assertEqual(self.split("listBlock")[1], picture("i", "a.png"))
+        self.assertText("lazy", "- item\n  lazy")
+        self.assertEqual(self.split("quote"), [picture("q", "q.png")])
+        self.assertEqual(self.split("afterList")[1], picture("x", "x.png"))
+        self.assertEqual(self.split("afterBreak")[1], picture("x", "x.png"))
+        self.assertEqual(self.split("indentedFence")[1], picture("x", "x.png"))  # indented ``` is code, not a fence
+        self.assertText("listFence", "![f](f.png)")
+
+    def test_odd_images(self):
+        self.assertText("emptyAlt", "[a.svg](https://x.test/ci) b.png")  # never an empty, invisible link
+        self.assertEqual(self.split("parens"), [picture("a", "foo_(bar).png")])
+        self.assertEqual(self.split("selfClosing"), [picture("x", "x")])
+
+    def test_long_lines_stay_fast(self):
+        for line, ms in self.out["slow"].items():
+            with self.subTest(line=line):
+                self.assertLess(ms, 3000)
 
     def test_link_targets(self):
         links = self.out["links"]
