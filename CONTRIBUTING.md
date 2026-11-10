@@ -49,7 +49,8 @@ file of the person's own.
   every layout; then it runs `herdr-app check` on every mod. Without
   `herdr-app` it says "skipped" for the mods and still passes, so
   `herdr-app check` is a **local** check: run `make check` on a machine with
-  Herdr before you commit a mod change.
+  Herdr before you commit a mod change. `HERDR_APP_BIN` set to something
+  that isn't a program fails the check, and says why.
 - CI (`.github/workflows/test.yml`) runs `make test` on Python 3.9 and 3.12,
   Ubuntu and macOS, and `make check` without Herdr. Only macOS is
   supported; Ubuntu is there to keep the tool portable for when Linux is.
@@ -142,10 +143,25 @@ leaves the recipe for you to change.
   (`main`, `files`, …), which Herdr would replace on its next start anyway.
 - It writes `mod.json` before anything else in a mod, because Herdr docks a
   mod it finds without one into the shown layout; a new mod folder appears
-  whole, in one rename.
+  whole, in one rename. Tests watch the writes through
+  `files.watching` (tests/test_home_safety.py).
 - It reads and checks `profiles.json` and `keys.json`, asks its questions
   and works out the whole merge before writing any file; Ctrl-C while
   writing waits until the writes and the manifest are done.
+- A process killed while writing (not Ctrl-C: `kill -9`, a crash, power)
+  loses nothing: a journal (`.herdr-profiles.pending.json`) holds the
+  manifest as it will be, and the next command recovers from it and says so.
+- It edits `profiles.json` and `keys.json` with the smallest textual change
+  (`scripts/profiletool/jsonedit.py`), so their formatting stays and an
+  uninstall gives them back as they were. Not kept: a value that changes
+  is rewritten whole in the file's style, new members go last, and an
+  empty object written on several lines comes back as `{}`; a file with
+  duplicate keys is rewritten whole in its own indentation.
+- It records which checkout installed (folder and branch, in the manifest).
+  Another checkout (a worktree, a second clone) sharing the home stops
+  before writing (`install`, `pull`), and `status` says so; `install
+  --take-over` makes it the one. Install from one checkout at a time: the
+  home holds one checkout's files.
 - The manifest (`scripts/profiletool/manifest.py` documents it) records
   every file written, which profile owns it, what was added to the person's
   own files (so uninstall takes back only that), and the profiles

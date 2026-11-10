@@ -23,6 +23,33 @@
 - README: what rules can't match (letter case, symlinks, `~` on another
   machine).
 
+## 0.9.2 — 2026-11-10
+
+The installer, for daily use:
+
+- **Several checkouts, one Herdr home.** Install records the checkout that
+  installed (its folder and branch). Another clone or worktree stops before
+  writing and says which one installed; `status` says so too, and `pull`
+  stops. `install --take-over` makes this checkout the one. A home
+  installed before keeps working as this checkout's.
+- **Killed while writing.** A process killed between writing files and
+  saving its record (`kill -9`, a crash) no longer loses what install added
+  to `profiles.json` and `keys.json`: a journal is written first, and the
+  next command recovers from it and says so.
+- **Your formatting stays.** `keys.json` and `profiles.json` get the
+  smallest edit (one line more, in your indentation, tabs, CRLF or on one
+  line), and an uninstall gives them back byte for byte.
+- **A full uninstall leaves the home as it was**: the empty `layouts/`,
+  `themes/` and `mods/` folders install made go, and a `profiles.json` you
+  had loses the `"default": null` / `"profiles": {}` install left (also for
+  homes installed before 0.8.0).
+- Folder answers: letter case counts as the same folder in the "your home
+  or above" check (`/users` on macOS), and `\x1c`-`\x1f`, C1 controls and a
+  BOM are refused, by the installer and the ideas mod alike.
+- `make check` with `HERDR_APP_BIN` pointing nowhere fails and says why,
+  instead of skipping the mods.
+- Tests see the write order (`mod.json` first, new mod folders whole).
+
 ## 0.9.1 — 2026-11-10
 
 First public release. Versions before it were never published; this one

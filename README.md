@@ -117,12 +117,14 @@ the file.
 - **Keys are only added where free.** `ctrl-shift-i` (ideas' quick capture)
   goes into `keys.json` only if you don't use it; otherwise install says so
   and leaves yours. With no `keys.json` at all, install adds nothing and
-  says what to add. Adding a key rewrites `keys.json` (same content, its
-  own formatting), and Herdr then treats the file as yours: it no longer
-  adds new default shortcuts to it on upgrades, even after an uninstall.
+  says what to add. Adding a key is a small edit to `keys.json` (one line
+  more, in your file's own indentation; the rest stays as you wrote it),
+  and Herdr then treats the file as yours: it no longer adds new default
+  shortcuts to it on upgrades, even after an uninstall.
 - **`profiles.json` is only added to**: a new profile's entry (if it isn't
   there), its suggested rules (if not there), and the default (if none).
-  Nothing in it is ever changed or removed by install.
+  Nothing in it is ever changed or removed by install, and its formatting
+  stays.
 - A file install wrote that you then edited in Herdr isn't overwritten: the
   next install stops and says which. `ARGS="--force"` overwrites it with
   the repo's; to keep your change, copy it to a name of your own first
@@ -140,6 +142,11 @@ those you uninstalled. `make install ARGS="standard"` updates without adding
 any. `make status` shows what differs from the repo (or says it matches),
 and the profiles you don't have.
 
+Install from one clone. If another clone (or a worktree) of the repo
+installed last, install stops before writing and says which; installing
+from here would remove what that one has and this one doesn't.
+`make install ARGS="--take-over"` makes this clone the one that installs.
+
 ## Uninstall
 
 ```sh
@@ -155,7 +162,10 @@ make uninstall                # everything
   they're still exactly as install left them. An entry or rule you changed,
   a key you rebound and anything you added yourself stay, and it says what
   it kept. A `profiles.json` install created is deleted by a full uninstall
-  only if nothing is left in it.
+  only if nothing is left in it; one you had is left as you had it (the
+  `"default"`, `"profiles"` or `"rules"` install added go too, once empty).
+  The `layouts/`, `themes/` and `mods/` folders install made go too, if
+  nothing is left in them.
 - The core (`standard`) can't be uninstalled while another profile is
   installed: uninstall that one first, or everything.
 - A profile you uninstall stays uninstalled: plain `make install` leaves it
