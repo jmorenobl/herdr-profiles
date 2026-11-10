@@ -20,6 +20,7 @@ make status    # what differs between the repo and the Herdr home
 make pull      # tweaked something live in Herdr? bring it back here
 make check     # JSON, profiles, layouts build, `herdr-app check` on every mod
 make test      # the tool's tests, on throwaway Herdr homes
+make upstream  # what a new Herdr changed in what core/ cloned (ARGS=--diff, ARGS=--save)
 make help      # all of them
 ```
 
@@ -99,7 +100,9 @@ profiles/<name>/           one folder per profile
   RECIPE.md                what it is and how it's built (herdr.dev format)
   layouts/ themes/ mods/   installed into ~/.config/herdr-app; layout JSON is built
   project/                 templates for the project folder itself, if any
-scripts/herdr_profiles.py  install / status / pull / uninstall / check (`--help`)
+upstream/                  Herdr's originals of what core/ cloned, unchanged, and the version
+  herdr.json               they're from, with which clone comes from which original
+scripts/herdr_profiles.py  install / status / pull / uninstall / check / upstream (`--help`)
 scripts/profiletool/       the code behind it (stdlib only; module map in __init__.py)
 scripts/export_public.py   `make export`: a clean one-commit copy to publish
 tests/                     the tool's tests; tests/golden/ is what install must write
@@ -189,6 +192,33 @@ leaves the recipe for you to change.
    and look at it in Herdr.
 6. If install's output changes on purpose, update `tests/golden/` (it's what
    install must write; never change it by accident).
+
+## Keeping up with Herdr
+
+`core/` holds clones of Herdr's: `layouts/standard.json` (from `main`),
+`mods/standard-files/` (from `files`) and `mods/standard-tabs/` (from
+`tabs`). Clones are never updated by Herdr, so a new Herdr's fixes don't
+reach them on their own. `upstream/` keeps the originals they came from,
+unchanged, and `upstream/herdr.json` the version (0.1.14 today).
+
+Herdr updates itself; when it's newer than that version, `make install`
+says so (a note; it goes on). Then:
+
+1. `make upstream`: reads the originals the installed Herdr ships from the
+   Herdr home (checked against Herdr's own hashes in `installed.json`, so an
+   edited copy is never taken for Herdr's) and says, per file of each clone:
+   `take` (only Herdr changed it: copy Herdr's over ours), `merge` (we
+   changed it too), `new`, `gone`. `ARGS=--diff` prints Herdr's changes.
+   It never changes a clone.
+2. Carry Herdr's changes into the clones by hand, where they don't fight
+   ours. Look at the type files (`gpui-kit.d.ts`, `herdr.d.ts`) too: the
+   mod API our mods use (switcher, ideas, history) may have changed.
+3. `make check`, `herdr-app check` on the installed mods, a look with
+   `herdr-app shot`.
+4. `make upstream ARGS=--save` records the new originals and version. Then
+   `cloned_from.version` in `core/layouts/standard.json`, NOTICE ("cloned
+   from Herdr x.y.z"), `MIN_VERSION` in `scripts/profiletool/herdr.py` if a
+   new API is used, and CHANGELOG.
 
 ## Each change
 

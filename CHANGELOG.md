@@ -2,6 +2,14 @@
 
 ## 0.9.4 — 2026-11-10
 
+- Keeping up with Herdr: `upstream/` keeps Herdr 0.1.14's originals of what
+  `core/` cloned (`main`, `files`, `tabs`), unchanged. `make upstream` reads
+  the installed Herdr's originals (checked against Herdr's hashes in
+  `installed.json`) and says per file what a new Herdr changed: take, merge,
+  new, gone (`--diff` shows it, `--save` records it once merged); it never
+  changes a clone. `make install` notes, and goes on, when Herdr is newer
+  than the version recorded there. `make check` checks the record.
+  CONTRIBUTING, "Keeping up with Herdr".
 - CI: actions on Node 24 (GitHub retires Node 20): checkout v7.0.1,
   setup-python v7.1.0, setup-node v7.1.0, still pinned by exact tag.
 - Installer: a profile's keys can go in its own layout's section

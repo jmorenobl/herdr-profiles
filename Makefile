@@ -2,7 +2,7 @@
 PY := python3
 TOOL := $(PY) scripts/herdr_profiles.py
 
-.PHONY: help install status pull uninstall check test export export-check
+.PHONY: help install status pull uninstall check test upstream export export-check
 
 help:
 	@echo "make install    copy the repo into the Herdr home (safe: stops on files edited in Herdr)"
@@ -12,6 +12,8 @@ help:
 	@echo "make pull       developers: bring files edited in Herdr back into the repo"
 	@echo "make check      validate JSON and run herdr-app check on every mod"
 	@echo "make test       run the installer's tests"
+	@echo "make upstream   developers: what a new Herdr changed in what core/ cloned"
+	@echo "                 ARGS=--diff shows it; ARGS=--save records it once merged"
 	@echo "make uninstall  remove what install wrote and added (ARGS=\"ideas\": only that profile)"
 	@echo "make export     DEST=<new folder> AUTHOR=\"Name <email>\": HEAD as a new one-commit repo, checked"
 	@echo "make export-check DEST=<folder>  check an existing export again"
@@ -30,6 +32,9 @@ uninstall:
 
 check:
 	@$(TOOL) check
+
+upstream:
+	@$(TOOL) upstream $(ARGS)
 
 test:
 	@$(PY) -m unittest discover -s tests

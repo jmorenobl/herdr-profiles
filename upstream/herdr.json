@@ -1,0 +1,8 @@
+{
+  "version": "0.1.14",
+  "clones": {
+    "core/layouts/standard.json": "layouts/main.json",
+    "core/mods/standard-files": "mods/files",
+    "core/mods/standard-tabs": "mods/tabs"
+  }
+}

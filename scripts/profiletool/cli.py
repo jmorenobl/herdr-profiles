@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import commands, herdr
+from . import commands, herdr, upstream
 from .home import Home, default_home
 from .spec import SpecError
 
@@ -35,6 +35,13 @@ def main(argv: list[str] | None = None) -> int:
                        description="Removes what install wrote and takes back what it added to profiles.json and"
                                    " keys.json, where still exactly as it left it. With a profile, only that one.")
     p.add_argument("profile", nargs="?", metavar="PROFILE", help="the profile to remove (default: everything)")
+    p = sub.add_parser("upstream", help="developers: what the installed Herdr changed in what core/ cloned",
+                       description="Compares Herdr's originals, as the installed Herdr ships them, with those"
+                                   " recorded in upstream/ (the version the clones were last checked against),"
+                                   " and says per file: take (only Herdr changed it), merge (both did), new, gone."
+                                   " Never changes a clone.")
+    p.add_argument("--diff", action="store_true", help="print Herdr's changes (recorded original -> installed one)")
+    p.add_argument("--save", action="store_true", help="once merged: record the installed Herdr's originals and version")
     sub.add_parser("check", help="validate JSON and profiles, build every layout, run herdr-app check on every mod")
     args = parser.parse_args(argv)
 
@@ -47,6 +54,7 @@ def main(argv: list[str] | None = None) -> int:
         "pull": lambda: commands.pull(ctx),
         "uninstall": lambda: commands.uninstall(ctx, args.profile),
         "check": lambda: commands.check(ctx),
+        "upstream": lambda: upstream.run(REPO, ctx.home, show_diff=args.diff, save=args.save),
     }[args.command]
     try:
         return run()

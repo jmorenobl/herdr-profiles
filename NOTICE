@@ -13,7 +13,10 @@ Version 2.0. These files were cloned from Herdr 0.1.14 and changed:
   rendered, with links and images.
 - core/mods/standard-tabs/: Herdr's `tabs` mod. A History button.
 
-The SVG icons in core/mods/standard-files/, core/mods/standard-history/ and
-core/mods/standard-tabs/ are Lucide icons (https://lucide.dev), as shipped
+upstream/ keeps Herdr's own originals of those three, unchanged, from the
+version named in upstream/herdr.json, to compare a new Herdr against.
+
+The SVG icons in core/mods/standard-files/, core/mods/standard-history/,
+core/mods/standard-tabs/ and upstream/mods/ are Lucide icons (https://lucide.dev), as shipped
 with Herdr: ISC License, some derived from Feather under the MIT License.
 Full notices: LICENSES/Lucide.txt.

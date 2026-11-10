@@ -11,6 +11,7 @@ Modules, from the bottom up:
   build     layouts built from a recipe (base + inserts + settings + switcher)
   plan      every file a set of packages installs, and its state in a home
   personal  first-time entries in the person's profiles.json and keys.json
+  upstream  the clones in core/ against the Herdr originals they came from (upstream/)
   commands  status, install, pull, uninstall, check
   cli       the command line
 

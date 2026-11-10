@@ -11,7 +11,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import build, herdr, personal, spec
+from . import build, herdr, personal, spec, upstream
 from . import manifest as manifest_mod
 from .files import atomic_write, dump_json, finish_first, load_json, notify, sha, sha_bytes, write_json
 from .home import KINDS, Home
@@ -134,7 +134,11 @@ def install(ctx: Context, names: list[str] | None = None, force: bool = False, s
     targets = ctx.selection(packages, names or [], data)
     preset = personal.parse_sets(sets or [], packages)
     if version_check:
-        print(f"  checked   Herdr app {herdr.require()}")
+        version = herdr.require()
+        print(f"  checked   Herdr app {version}")
+        note = upstream.newer_note(ctx.repo, version)
+        if note:
+            print(note)
     if other:
         print(f"  taking over from {manifest_mod.describe(other)}")
     core = ctx.core(packages)
@@ -591,6 +595,9 @@ def check(ctx: Context) -> int:
         if not any(str(err).startswith(str(p)) for p in invalid):  # already reported above
             failed += 1
             print(f"  invalid   {err}")
+    for problem in upstream.problems(ctx.repo):
+        failed += 1
+        print(f"  invalid   {problem}")
     program = herdr.binary()
     override = os.environ.get("HERDR_APP_BIN")
     if program is None and override:
