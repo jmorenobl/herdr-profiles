@@ -216,13 +216,19 @@ with its notes and actions, and one key captures a new idea from any space.
 - `tests/test_ideas_store.py` runs the whole mod under node on throwaway
   folders and git repos, with a stand-in `herdr` doing real file writes and
   git (`tests/js/herdr_git_stub.js`) and a stand-in UI that takes any builder
-  call (`tests/js/gpui_view_stub.js`): autocommit (a bigger repo, a merge or
+  call and logs the text and colors drawn (`tests/js/gpui_view_stub.js`):
+  autocommit (a bigger repo, a merge or
   rebase under way, a detached HEAD, `showUntrackedFiles=no`, non-ASCII
   names, emoji subjects, committing on close), creating, listing, moving and
   updating ideas, slugs, `.board.json`, ages across daylight saving, a drop
   whose status write fails, review writes, the review asked for with the
   Board tab closed, the note file following the selection, type changes
-  under a working tab and double clicks, and finding agent tabs.
+  under a working tab and double clicks, and finding agent tabs. Also the
+  glue around the two pure helpers: the side panel (not the board) warns
+  once about untyped folders and still loads when they can't be listed
+  (`main.js`), and the capture overlay shows "From <space>", or "Saves into
+  …" in amber (`ansi3`) once profiles.json turns out to give no folder
+  (`capture.js`).
 - `tests/test_ideas_mod.py` runs `config.js`, `ui.js`, `actions.js` and
   `store.js`, plus `capture.js`, `board.js` and `common.js` on a stand-in
   view, under node with a stand-in `herdr` (`tests/js/`), when node is

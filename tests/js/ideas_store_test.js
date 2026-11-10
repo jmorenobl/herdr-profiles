@@ -14,6 +14,7 @@ import {
 import { tabFor, tabName, workingIn, select, selected } from "./actions.js";
 import { REVIEW, freshRequest } from "./common.js";
 import Ideas from "./main.js";
+import { drawn } from "./gpui.js";
 
 const ROOT = process.argv[2];
 const T = ["book", "code", "legal", "other"];
@@ -527,9 +528,75 @@ test("every role renders", async () => {
   }
 });
 
+// ---------- main.js and capture.js glue ----------
+
+test("the side panel warns about folders that aren't types, once", async () => {
+  const F = fresh("untyped");
+  write(`${F}/code/a/idea.md`, idea("A")); write(`${F}/work/b/idea.md`, idea("B"));
+  ideasSpaceFor(F);
+  await view(F, "board");
+  assert.deepEqual(state.notes, [], "the board doesn't warn (the side panel does)");
+  await view(F, "side");
+  const warned = state.notes.filter((x) => x.title === "Ideas: some folders aren't types");
+  assert.equal(warned.length, 1);
+  assert.equal(warned[0].level, "warning");
+  assert.match(warned[0].body, /Ideas in work don't show: add it to "types"/);
+  // With work as a type, nothing to say.
+  state.notes = [];
+  await view(F, "side", { types: ["code", "work"] });
+  assert.deepEqual(noteTitles(), []);
+});
+
+test("the side panel still loads when the untyped folders can't be listed", async () => {
+  const F = fresh("unlisted");
+  write(`${F}/code/a/idea.md`, idea("A")); write(`${F}/work/b/idea.md`, idea("B"));
+  ideasSpaceFor(F);
+  // Only the listing of untyped folders (store.js OTHERS) fails; everything else runs.
+  state.failExec = (cmd, args) => cmd === "sh" && String(args[1]).includes('for f in "$d"/*/idea.md');
+  const { v } = await view(F, "side");
+  assert.deepEqual(v.ideas.map((x) => x.id), ["code/a"]);
+  assert.ok(!noteTitles().includes("Ideas: some folders aren't types"));
+});
+
+// The capture overlay, rendered: the footnote's text and the color drawn just before it.
+async function captureFoot(settings) {
+  state.profiles = settings === null ? null : { profiles: { ideas: settings } };
+  state.props = { overlay: "o1" };
+  const v = new Ideas();
+  const cx = makeCx();
+  v.init(state.props, cx);
+  const foot = () => {
+    drawn.length = 0;
+    v.render();
+    const i = drawn.findIndex(([k, s]) => k === "text" && /^(From |Saves into )/.test(s));
+    return i < 0 ? null : { text: drawn[i][1], color: drawn[i - 1]?.[0] === "color" ? drawn[i - 1][1] : null };
+  };
+  const before = foot();
+  await settle();
+  assert.deepEqual(cx.errors, []);
+  return { before, after: foot() };
+}
+
+test("capture says where the idea comes from", async () => {
+  state.spaces = [{ id: "s1", index: 1, name: "api", folder: "/srv/api", active: true, tabs: [] }];
+  const { after } = await captureFoot({ folder: "~/notes/ideas" });
+  assert.deepEqual(after, { text: "From api", color: "dim" });
+});
+
+test("capture says where it saves, in amber, when profiles.json gives no folder", async () => {
+  state.spaces = [{ id: "s1", index: 1, name: "api", folder: "/srv/api", active: true, tabs: [] }];
+  const { before, after } = await captureFoot({});
+  assert.deepEqual(before, { text: "From api", color: "dim" }, "the defaults until profiles.json is read");
+  assert.deepEqual(after, { text: "Saves into ~/ideas", color: "ansi3" });
+  // No space active: no origin, nothing beside the buttons (but the warning still shows).
+  state.spaces = [];
+  assert.equal((await captureFoot({ folder: "~/notes/ideas" })).after, null);
+  assert.deepEqual((await captureFoot(null)).after, { text: "Saves into ~/ideas", color: "ansi3" });
+});
+
 const out = {};
 for (const [name, fn] of Object.entries(cases)) {
-  Object.assign(state, { notes: [], runs: [], shared: new Map(), spaces: [], panes: [], failWrite: null, beforeWrite: null, props: {}, edited: false });
+  Object.assign(state, { notes: [], runs: [], shared: new Map(), spaces: [], panes: [], failWrite: null, beforeWrite: null, failExec: null, props: {}, edited: false });
   try { await fn(); out[name] = null; }
   catch (e) { out[name] = String(e?.stack ?? e); }
 }

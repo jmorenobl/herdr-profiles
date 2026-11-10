@@ -16,6 +16,7 @@ export const state = {
   runs: [],                // run() calls: [name, args]
   failWrite: null,         // (path) => true makes writeTextFile reject for that path
   beforeWrite: null,       // (path) => void runs just before a write is checked
+  failExec: null,          // (cmd, args) => true makes exec reject for that call
 };
 
 export const GIT_ENV = {
@@ -28,6 +29,7 @@ export const GIT_ENV = {
 const ALLOWED = new Set(["sh", "git", "mkdir", "mv", "test"]);
 export async function exec(cmd, args = [], opts = {}) {
   if (!ALLOWED.has(cmd)) throw new Error(`exec ${cmd} is not allowed in tests`);
+  if (state.failExec?.(cmd, args)) throw new Error("exec refused by the test");
   state.execs = (state.execs ?? 0) + 1;
   const r = spawnSync(cmd, args, { encoding: "utf8", cwd: opts.cwd, env: GIT_ENV, timeout: opts.timeout ?? 30000 });
   if (r.error) throw r.error;
@@ -69,4 +71,5 @@ export const closeOverlay = () => null;
 // Never resolve: the views' command and watch loops just wait.
 export const nextCommand = () => new Promise(() => {});
 export const watchFolder = () => new Promise(() => {});
-export const theme = () => new Proxy({}, { get: () => "#000000" });
+// Each color is its own name (t.dim is "dim"), so a test can tell which one was used.
+export const theme = () => new Proxy({}, { get: (_t, k) => (typeof k === "string" ? k : undefined) });

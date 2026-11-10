@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.4 — 2026-11-10
+
+- Tests: the ideas mod's glue around its two pure helpers, rendered on the
+  stand-in view: the side panel's warning about untyped folders (only the
+  side panel, once, and it still loads when the listing fails) and capture's
+  footnote (where the idea comes from, or where it saves, in amber). The
+  stand-in UI logs the text and colors drawn; the stand-in `herdr` can make
+  one `exec` fail (`failExec`) and gives each theme color its own name.
+
 ## 0.9.3 — 2026-11-10
 
 - README: a front page for people who don't know Herdr profiles yet: badges
