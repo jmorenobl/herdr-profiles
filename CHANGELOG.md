@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.9.2 — 2026-11-10
+
+What exists, working well: fixes from independent audits of every mod and
+the installer's open items.
+
+### Mods
 
 - **Ideas, autocommit.** It no longer commits into a bigger repo the ideas
   folder sits in (that took whatever else was staged there), nor while a
@@ -58,9 +63,7 @@
   lanes, a commit's dot stays on the last lane with a mark. Watching another
   repo and back no longer leaves extra watchers running.
 
-## 0.9.2 — 2026-11-10
-
-The installer, for daily use:
+### Installer
 
 - **Several checkouts, one Herdr home.** Install records the checkout that
   installed (its folder and branch). Another clone or worktree stops before
