@@ -132,6 +132,10 @@ class SpecTest(unittest.TestCase):
             ({"layout": {"name": "x", "source": "nope.json"}}, "not a file"),
             ({"layout": layout, "rules": [{"profile": "x", "path": "~"}]}, "'rules'"),
             ({"layout": layout, "keys": {"global": {"k": 1}}}, "'keys'"),
+            ({"layout": layout, "keys": {"local": {"k": "a"}}}, "must be global, terminal"),
+            ({"layout": layout, "keys": {"layout:": {"k": "a"}}}, "must be global, terminal"),
+            ({"layout": layout, "keys": {"layout:standard": {"k": "a"}}}, r"own layout only \(layout:x\)"),
+            ({"layout": layout, "keys": {"mod:files": {"k": "a"}}}, "own mods only"),
             ({"layout": {**layout, "set": {"children": []}}, }, "can't replace"),
             ({"schema": 9, "layout": layout}, "not supported"),
         ]
@@ -139,6 +143,18 @@ class SpecTest(unittest.TestCase):
             with self.subTest(message=message):
                 with self.assertRaisesRegex(spec.SpecError, message):
                     self.write_x(n, profile)
+
+    def test_key_sections_a_profile_may_use(self):
+        keys = {"global": {"a": "x"}, "terminal": {"b": "y"}, "layout:x": {"c": "z"}}
+        pkg = self.write_x(300, {"layout": {"name": "x", "source": "layouts/x.json"}, "keys": keys})
+        self.assertEqual(pkg.keys, keys)
+        (pkg.path / "mods/x-panel").mkdir(parents=True)
+        (pkg.path / "mods/x-panel/mod.json").write_text("{}")
+        self.assertEqual(spec.load(pkg.path).keys, keys)
+        data = json.loads((pkg.path / "profile.json").read_text())
+        data["keys"]["mod:x-panel"] = {"d": "w"}
+        (pkg.path / "profile.json").write_text(json.dumps(data))
+        self.assertIn("mod:x-panel", spec.load(pkg.path).keys)
 
     def test_invalid_asks_say_why(self):
         layout = {"name": "x", "source": "layouts/x.json"}

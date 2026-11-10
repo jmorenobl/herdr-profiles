@@ -791,5 +791,48 @@ class SecondVerifierTest(HomeCase):
         self.assertIn('add {"ctrl-shift-i": "mod.open:ideas"} under "global" yourself', r.stdout)
 
 
+class LayoutKeysTest(HomeCase):
+    """Keys a profile binds in its own layout (`layout:<name>`): a key the person binds globally
+    counts as used there, since the layout's would hide it."""
+
+    def repo_with(self, keys):
+        repo = self.home.parent / f"{self.home.name}-repo"
+        for part in ("scripts", "core", "profiles"):
+            shutil.copytree(REPO / part, repo / part, ignore=shutil.ignore_patterns("__pycache__"))
+        self.addCleanup(shutil.rmtree, repo)
+        (repo / "profiles/more").mkdir()
+        (repo / "profiles/more/profile.json").write_text(json.dumps(
+            {"schema": 2, "name": "more", "layout": {"name": "more", "base": "standard"}, "keys": keys}))
+        return lambda *a: subprocess.run([sys.executable, str(repo / "scripts/herdr_profiles.py"), *a],  # noqa: E731
+                                         env=self.env(), capture_output=True, text=True, stdin=subprocess.DEVNULL)
+
+    def test_a_layout_key_goes_in_its_section_and_leaves_with_it(self):
+        before = self.json("keys.json")
+        run = self.repo_with({"layout:more": {"ctrl-shift-m": "app.help", "cmd-p": "app.palette"}})
+        r = run("install", "more")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("key       ctrl-shift-m -> app.help", r.stdout)
+        self.assertIn("skipped   cmd-p: bound in global to 'mod.open:picker'; in layout:more it would hide that",
+                      r.stdout)
+        self.assertEqual(self.json("keys.json"), {**before, "layout:more": {"ctrl-shift-m": "app.help"}})
+        r = run("uninstall", "more")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.json("keys.json"), before)
+
+    def test_no_empty_section_when_every_key_is_taken(self):
+        before = self.json("keys.json")
+        # A global key is added in the same install, so keys.json is written: no empty layout:more in it.
+        run = self.repo_with({"global": {"ctrl-shift-n": "app.help"}, "layout:more": {"cmd-p": "app.palette"}})
+        r = run("install", "more")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.json("keys.json"), {"global": {**before["global"], "ctrl-shift-n": "app.help"}})
+
+    def test_the_same_action_globally_is_no_clash(self):
+        run = self.repo_with({"layout:more": {"cmd-p": "mod.open:picker"}})
+        r = run("install", "more")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.json("keys.json")["layout:more"], {"cmd-p": "mod.open:picker"})
+
+
 if __name__ == "__main__":
     unittest.main()

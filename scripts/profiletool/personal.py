@@ -299,6 +299,8 @@ def merge_first_time(packages: list[Package], home: Home, manifest: dict,
 
 def merge_keys(pkg: Package, keys: dict | None, lines: list[str], record: list | None = None) -> bool:
     """Adds the profile's keys that are free; never replaces one the person uses.
+    A key in a section narrower than `global` (layout:, mod:, terminal) wins over the global one
+    there, so a key the person binds globally counts as used too: adding it would hide theirs.
     What it adds goes into `record` (the manifest's "added" keys)."""
     changed = False
     record = [] if record is None else record
@@ -307,9 +309,14 @@ def merge_keys(pkg: Package, keys: dict | None, lines: list[str], record: list |
             lines.append(f"  note      no keys.json yet; add {json.dumps(binds)} under {json.dumps(section)} yourself")
             continue
         new_section = section not in keys
-        current = keys.setdefault(section, {})
+        current = keys.get(section, {})
+        everywhere = keys.get("global", {}) if section != "global" else {}
         for key, action in binds.items():
-            if key not in current:
+            if key not in current and key in everywhere and everywhere[key] != action:
+                lines.append(f"  skipped   {key}: bound in global to {everywhere[key]!r}; in {section} it would"
+                             f" hide that (wanted {action!r})")
+            elif key not in current:
+                current = keys.setdefault(section, current)
                 current[key] = action
                 changed = True
                 record.append({"section": section, "key": key, "action": action, "new_section": new_section})

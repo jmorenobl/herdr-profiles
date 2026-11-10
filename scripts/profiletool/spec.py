@@ -24,6 +24,11 @@ mods/ laid out like the Herdr home. Schema 2 (current):
     "keys": { "<section>": { "<key>": "<action>" } }
   }
 
+Key sections are Herdr's: `layout:<its own layout>` for keys that belong to
+the profile's window (the default choice), `global` only for keys that must
+work from any space (ideas' `ctrl-shift-i`), `mod:<one of its own mods>`, or
+`terminal`. A profile never binds keys in another profile's layout or mod.
+
 The answer to an `ask` goes into the profile's settings under its `setting`
 name, and a rule's string values can use it as `{setting}` (for example
 `{ "path": "{folder}" }`), so the suggested rule follows the answer. A
@@ -62,6 +67,7 @@ CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 EXOTIC = re.compile("[\x1c-\x1f\x80-\x9f\ufeff]")
 SETTING = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 PLACEHOLDER = re.compile(r"\{([^{}]*)\}")
+SECTION = re.compile(r"^(global|terminal|(layout|mod):([a-z0-9][a-z0-9-]*))$")
 LAYOUT_KEYS = {"name", "source", "base", "insert", "set"}
 INSERT_KEYS = {"into", "after", "before", "node"}
 
@@ -238,6 +244,16 @@ def parse(data: Any, folder: Path) -> Package:
         for b in keys.values()
     ):
         raise fail("'keys' must map sections to {key: action}")
+    for section in keys:
+        m = SECTION.match(section)
+        if not m:
+            raise fail(f"'keys' section {section!r}: must be global, terminal, layout:<name> or mod:<name>")
+        if m[2] == "layout" and m[3] != recipe.name:
+            raise fail(f"'keys' section {section!r}: a profile binds keys in its own layout only"
+                       f" (layout:{recipe.name})")
+        if m[2] == "mod" and not (folder / "mods" / m[3] / "mod.json").is_file():
+            raise fail(f"'keys' section {section!r}: a profile binds keys in its own mods only"
+                       f" (mods/{m[3]}/ isn't one)")
     if not isinstance(data.get("default", False), bool):
         raise fail("'default' must be true or false")
     return Package(folder, name, recipe, data.get("default", False), settings, tuple(rules), keys, ask)

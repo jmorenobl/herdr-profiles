@@ -132,7 +132,8 @@ with its notes and actions, and one key captures a new idea from any space.
   `projectsRoot` when it's set, else proposing a location and asking.
 - **Open project** goes to the space already working in `project:`, or
   opens a new space there (where the profile switcher picks its layout).
-- `ctrl-shift-i` (any space, any layout) and **+ New** open the capture
+- `ctrl-shift-i` (any space, any layout: the one key in `global`, since
+  capture is for when you're elsewhere) and **+ New** open the capture
   dialog (520×410): idea, notes, type. Enter saves, Esc cancels; the new idea
   becomes the selected one. Its folder is the title in lowercase letters and
   digits of any script, accents off Latin letters and `ß`, `æ`, `ø`, `ł`, …

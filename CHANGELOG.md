@@ -2,6 +2,14 @@
 
 ## 0.9.4 — 2026-11-10
 
+- Installer: a profile's keys can go in its own layout's section
+  (`layout:<name>`), which is where keys for one window belong; `global`
+  stays for keys that must work from any space (ideas' `ctrl-shift-i`, so
+  nothing in what install writes changed). `profile.json` key sections are
+  checked: Herdr's names only, and a profile's own layout and mods only. A
+  key the person binds in `global` counts as taken in a narrower section
+  (it would hide theirs there), and a section whose keys are all taken is no
+  longer left behind empty.
 - Tests: the ideas mod's glue around its two pure helpers, rendered on the
   stand-in view: the side panel's warning about untyped folders (only the
   side panel, once, and it still loads when the listing fails) and capture's

@@ -156,7 +156,9 @@ the file.
   it, set `"default"` to another profile in `profiles.json`.
 - **Keys are only added where free.** `ctrl-shift-i` (ideas' quick capture)
   goes into `keys.json` only if you don't use it; otherwise install says so
-  and leaves yours. With no `keys.json` at all, install adds nothing and
+  and leaves yours. A key a profile binds only in its own window counts as
+  used when you bind it in `global`, so yours keeps working there. With
+  no `keys.json` at all, install adds nothing and
   says what to add. Adding a key is a small edit to `keys.json` (one line
   more, in your file's own indentation; the rest stays as you wrote it),
   and Herdr then treats the file as yours: it no longer adds new default

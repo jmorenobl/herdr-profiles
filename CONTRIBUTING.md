@@ -179,7 +179,12 @@ leaves the recipe for you to change.
    fixed setting; its rules can use the answer as `{setting}`.
 3. Give its theme the layout's name (`themes/<name>.json`) and `set` it:
    Herdr then offers it only on that layout.
-4. Its keys go in `keys`; install adds each only where it's free.
+4. Its keys go in `keys`, in `layout:<its layout>` so they act only in its
+   window; `global` only for a key that must work from any space (ideas'
+   `ctrl-shift-i`). `mod:<one of its mods>` and `terminal` also work; another
+   profile's layout or mod doesn't (`make check` says so). Install adds each
+   key only where it's free, and a key the person binds in `global` counts as
+   taken in the narrower sections too (there it would hide theirs).
 5. Write its `README.md` and `RECIPE.md`, then `make check && make install`,
    and look at it in Herdr.
 6. If install's output changes on purpose, update `tests/golden/` (it's what
