@@ -8,13 +8,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .files import load_json, write_json
+from .files import load_json, notify, write_json
 from .spec import SpecError
 
 # Herdr writes these into mod folders; they're not ours.
 HERDR_WRITTEN = frozenset({"gpui-kit.d.ts", "jsconfig.json", "tsconfig.json"})
 # The kinds of things a package installs, each in its own folder of the home.
 KINDS = ("layouts", "themes", "mods")
+# The manifest's fields that are lists (manifest.py documents them all).
+LISTS = ("installed", "profiles", "created", "uninstalled", "config_keys", "folders")
 
 
 def default_home() -> Path:
@@ -31,6 +33,11 @@ class Home:
         return self.path / ".herdr-profiles.json"
 
     @property
+    def pending_path(self) -> Path:
+        """The journal: what a write phase is about to do, until its manifest is saved (manifest.py)."""
+        return self.path / ".herdr-profiles.pending.json"
+
+    @property
     def profiles_path(self) -> Path:
         return self.path / "profiles.json"
 
@@ -44,9 +51,8 @@ class Home:
     def load_manifest(self) -> dict[str, Any]:
         data = self.load_checked(self.manifest_path, {}, "move it away to start over (install then adopts"
                                  " files that are exactly ours, and stops on any other)")
-        if not isinstance(data, dict) or not all(isinstance(data.get(k, []), list)
-                                                 for k in ("installed", "profiles", "created", "uninstalled")) \
-                or not all(isinstance(data.get(k, {}), dict) for k in ("files", "owners", "added")):
+        if not isinstance(data, dict) or not all(isinstance(data.get(k, []), list) for k in LISTS) \
+                or not all(isinstance(data.get(k, {}), dict) for k in ("files", "owners", "added", "checkout")):
             raise SpecError(f"{self.manifest_path}: not a manifest this tool wrote; fix it, or move it away")
         return data
 
@@ -87,6 +93,7 @@ class Home:
         if self.linked(rel):
             return
         dest.unlink(missing_ok=True)
+        notify("delete", dest)
         stop = {self.path, *(self.path / kind for kind in KINDS)}
         for parent in dest.parents:
             if parent in stop or parent.is_symlink():
@@ -95,5 +102,6 @@ class Home:
                 if any(p for p in parent.iterdir() if p.name not in HERDR_WRITTEN):
                     return
                 shutil.rmtree(parent)
+                notify("delete", parent)
             except FileNotFoundError:
                 pass

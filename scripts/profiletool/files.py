@@ -10,7 +10,27 @@ import sys
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator, Optional
+
+# Called after each change install and uninstall make in a home: (event, path, renamed to).
+# "write" (a file, whole), "rename" (a staged mod folder into place), "delete". Tests watch
+# the order of writes with it (`watching`); nothing else does.
+Watcher = Callable[[str, Path, Optional[Path]], None]
+WATCHERS: list[Watcher] = []
+
+
+@contextmanager
+def watching(fn: Watcher) -> Iterator[None]:
+    WATCHERS.append(fn)
+    try:
+        yield
+    finally:
+        WATCHERS.remove(fn)
+
+
+def notify(event: str, path: Path, dest: Path | None = None) -> None:
+    for fn in list(WATCHERS):
+        fn(event, path, dest)
 
 
 def sha_bytes(data: bytes) -> str:
@@ -61,6 +81,7 @@ def atomic_write(path: Path, data: bytes) -> None:
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise
+    notify("write", path)
 
 
 @contextmanager

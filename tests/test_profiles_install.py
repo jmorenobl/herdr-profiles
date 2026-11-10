@@ -191,8 +191,8 @@ class UninstallProfileTest(HomeCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(self.written(), [])
         self.assertEqual(self.json("keys.json"), {"global": {"cmd-p": "mod.open:picker"}})
-        self.assertEqual(self.json("profiles.json"),
-                         {"default": None, "profiles": {}, "rules": [{"has": ".mine", "profile": "ideas"}]})
+        # install made the file and every key in it: what's left is the person's rule (0.9.2)
+        self.assertEqual(self.json("profiles.json"), {"rules": [{"has": ".mine", "profile": "ideas"}]})
 
     def test_a_keys_section_install_made_goes_when_empty(self):
         (self.home / "keys.json").write_text("{}")
@@ -316,7 +316,7 @@ class VersionTest(HomeCase):
         self.assertEqual(self.written(), [])
         r = self.run_cmd("install", HERDR_APP_BIN=str(empty / "herdr-app"))
         self.assertEqual(r.returncode, 1)
-        self.assertIn("isn't a program you can run", r.stderr)
+        self.assertIn("herdr-app: not found (no such file)", r.stderr)
         r = self.run_cmd("install", "--skip-version-check", HERDR_APP_BIN=str(empty / "herdr-app"))
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertNotIn("checked", r.stdout)

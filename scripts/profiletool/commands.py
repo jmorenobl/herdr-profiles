@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import difflib
 import json
 import os
@@ -12,8 +13,8 @@ from pathlib import Path
 
 from . import build, herdr, personal, spec
 from . import manifest as manifest_mod
-from .files import atomic_write, dump_json, finish_first, load_json, sha
-from .home import Home
+from .files import atomic_write, dump_json, finish_first, load_json, notify, sha, sha_bytes, write_json
+from .home import KINDS, Home
 from .plan import Entry, clashes, entries, guard_shipped, needs, state, top
 
 
@@ -72,9 +73,15 @@ class Context:
 
 
 def status(ctx: Context) -> int:
+    recover(ctx)
     data = ctx.home.load_manifest()
     manifest = data.get("files", {})
     packages = ctx.packages()
+    other = other_checkout(ctx, data)
+    if other:
+        print(f"  checkout  installed from {manifest_mod.describe(other)}, not this checkout"
+              f" ({manifest_mod.describe(checkout_of(ctx.repo))}): what follows compares that install with"
+              " this checkout; `install` here stops unless `install --take-over`")
     have = [p for p in packages if p.name in manifest_mod.installed(data)]
     shown = ctx.selection(packages, [], data, everything=False) if have else []
     items = entries(packages, shown)
@@ -106,16 +113,30 @@ def status(ctx: Context) -> int:
 
 
 def install(ctx: Context, names: list[str] | None = None, force: bool = False, sets: list[str] | None = None,
-            prompt: personal.Prompt = None, version_check: bool = True) -> int:
+            prompt: personal.Prompt = None, version_check: bool = True, take_over: bool = False) -> int:
     """`names`: the profiles to install (none: all), plus the core and what's installed already;
-    `sets`: --set answers; `prompt`: how to ask a new profile's questions (None: use defaults)."""
+    `sets`: --set answers; `prompt`: how to ask a new profile's questions (None: use defaults);
+    `take_over`: install even though another checkout installed last."""
+    recover(ctx)
     packages = ctx.packages()
     owners = repo_owners(packages)
     data = manifest_mod.upgrade(ctx.home.load_manifest(), owners)
+    here = checkout_of(ctx.repo)
+    other = other_checkout(ctx, data)
+    if other and not take_over:
+        print("Not installing: another checkout of this repo installed into this Herdr home last:")
+        print(f"  installed from  {manifest_mod.describe(other)}")
+        print(f"  this checkout   {manifest_mod.describe(here)}")
+        print("Installing from here would update or remove what that checkout installed and this one"
+              " doesn't have. Install from that checkout, or take the home over from this one with"
+              " `install --take-over` (make install ARGS=--take-over). Nothing was written.")
+        return 1
     targets = ctx.selection(packages, names or [], data)
     preset = personal.parse_sets(sets or [], packages)
     if version_check:
         print(f"  checked   Herdr app {herdr.require()}")
+    if other:
+        print(f"  taking over from {manifest_mod.describe(other)}")
     core = ctx.core(packages)
     if not names:
         for pkg in packages:
@@ -156,7 +177,30 @@ def install(ctx: Context, names: list[str] | None = None, force: bool = False, s
     merge = personal.plan_first_time(targets, ctx.home, data, answers, config, keys)
     in_repo = {p.name for p in packages}
     chosen = {p.name for p in targets}
+    gone = [rel for rel in sorted(set(manifest) - {e.rel for e in items})
+            if not (manifest_mod.owner(data, rel, owners) in in_repo
+                    and manifest_mod.owner(data, rel, owners) not in chosen)]
+    keeping = mods_kept(gone, ctx.home, manifest)  # another profile's files: install never removes one
+
+    # The manifest as it will be saved, worked out before writing too: the journal holds it.
+    after = copy.deepcopy(data)
+    for e in items:
+        after["files"][e.rel] = e.sha
+        after["owners"][e.rel] = e.pkg.name
+    for rel in gone:
+        del after["files"][rel]
+        after["owners"].pop(rel, None)
+    after["installed"] = [p.name for p in packages if p.name in chosen]
+    after["uninstalled"] = [n for n in data["uninstalled"] if n not in chosen]
+    after["checkout"] = here
+    for kind in KINDS:
+        if kind not in after["folders"] and not os.path.lexists(ctx.home.file(kind)) \
+                and any(e.rel.startswith(f"{kind}/") for e in items):
+            after["folders"].append(kind)
+    planned = merge.planned()
+
     with finish_first():
+        begin(ctx, "install", after, planned)
         new_mods = stage_new_mods(items, ctx.home)
         # mod.json first: Herdr docks a mod folder it finds without one into the shown layout.
         changed = 0
@@ -166,13 +210,7 @@ def install(ctx: Context, names: list[str] | None = None, force: bool = False, s
                     atomic_write(ctx.home.file(e.rel), e.data)
                 changed += 1
                 print(f"  installed {e.rel}")
-            manifest[e.rel] = e.sha
-            data["owners"][e.rel] = e.pkg.name
 
-        gone = [rel for rel in sorted(set(manifest) - {e.rel for e in items})
-                if not (manifest_mod.owner(data, rel, owners) in in_repo
-                        and manifest_mod.owner(data, rel, owners) not in chosen)]
-        keeping = mods_kept(gone, ctx.home, manifest)  # another profile's files: install never removes one
         for rel in gone:
             if ctx.home.linked(rel):
                 print(f"  kept      {rel} (behind a symlink, {ctx.home.linked(rel)}: not deleted through it)")
@@ -183,17 +221,97 @@ def install(ctx: Context, names: list[str] | None = None, force: bool = False, s
                 print(f"  removed   {rel}")
             else:
                 print(f"  kept      {rel} (edited in Herdr; it's yours now, delete it yourself)")
-            del manifest[rel]
-            data["owners"].pop(rel, None)
 
         for line in recorded:
             print(line)
-        changed += merge.apply()
-        data["installed"] = [p.name for p in packages if p.name in chosen]
-        data["uninstalled"] = [n for n in data["uninstalled"] if n not in chosen]
-        ctx.home.save_manifest(data)
+        changed += merge.apply(planned)
+        finish(ctx, after)
     print("Installed." if changed else "Nothing to install: Herdr home matches the repo.")
     return 0
+
+
+def git_branch(repo: Path) -> str | None:
+    """The checkout's branch ("main"), "detached at <sha>", or None outside git."""
+    def git(*args: str) -> str | None:
+        try:
+            r = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True,
+                               stdin=subprocess.DEVNULL, timeout=10)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        return r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else None
+    if not (repo / ".git").exists():
+        return None  # not a checkout of its own (git would answer for a repo around it)
+    branch = git("symbolic-ref", "--short", "-q", "HEAD")
+    if branch:
+        return branch
+    commit = git("rev-parse", "--short", "HEAD")
+    return f"detached at {commit}" if commit else None
+
+
+def checkout_of(repo: Path) -> dict:
+    """What the manifest records about the checkout installing: its folder and branch."""
+    return {"path": str(repo.resolve()), "branch": git_branch(repo)}
+
+
+def other_checkout(ctx: Context, data: dict) -> dict | None:
+    """The checkout recorded in the manifest when it isn't this one; None when it is (or none is)."""
+    recorded = data.get("checkout")
+    if manifest_mod.same_checkout(recorded, str(ctx.repo.resolve())):
+        return None
+    return recorded
+
+
+PERSONAL = ("profiles.json", "keys.json")
+
+
+def begin(ctx: Context, command: str, after: dict | None, planned: dict[str, bytes | None]) -> None:
+    """Writes the journal before a write phase: the manifest as it will be, and each personal file
+    as it will be. Nothing to journal when no personal file changes (see manifest.py)."""
+    expect = {}
+    for name, data in planned.items():
+        path = ctx.home.file(name)
+        now = path.read_bytes() if path.is_file() else None
+        if data != now:
+            expect[name] = None if data is None else sha_bytes(data)
+    if expect:
+        write_json(ctx.home.pending_path, manifest_mod.journal(command, after, expect))
+
+
+def finish(ctx: Context, after: dict | None) -> None:
+    """Saves the manifest (None: deletes it), then drops the journal."""
+    if after is None:
+        ctx.home.manifest_path.unlink(missing_ok=True)
+        notify("delete", ctx.home.manifest_path)
+    else:
+        ctx.home.save_manifest(after)
+    ctx.home.pending_path.unlink(missing_ok=True)
+
+
+def recover(ctx: Context) -> None:
+    """A journal left behind: the last install or uninstall was killed while writing. Records
+    what it did (manifest.py, "The journal"), and says so."""
+    path = ctx.home.pending_path
+    if not os.path.lexists(path):
+        return
+    fix = "move it away (the manifest then stays as it is)"
+    data = ctx.home.load_checked(path, None, fix)
+    if not manifest_mod.check_journal(data) or not set(data["expect"]) <= set(PERSONAL):
+        raise spec.SpecError(f"{path}: not a journal this tool wrote; {fix}")
+    now = {name: sha(ctx.home.file(name)) for name in data["expect"]}
+    adopt, unwritten = manifest_mod.recovered(data, now)
+    command = data["command"]
+    with finish_first():
+        if adopt:
+            finish(ctx, data["after"])
+            print(f"  recovered the last `{command}` was stopped (killed) before it saved what it did;"
+                  " recorded now")
+            for name in unwritten:
+                print(f"  note      {name}: what `{command}` meant to change there wasn't written;"
+                      f" check it (it's as you had it before)")
+        else:
+            path.unlink(missing_ok=True)
+            print(f"  recovered the last `{command}` was stopped (killed) before it changed profiles.json"
+                  f" or keys.json; they're as they were. Run `{command}` again to finish it")
 
 
 def mods_kept(rels: list[str], home: Home, files: dict[str, str]) -> set[str]:
@@ -236,18 +354,25 @@ def stage_new_mods(items: list[Entry], home: Home) -> set[str]:
     for mod in sorted(new_mods):
         stage = home.file(f"mods/.{mod}.staging")
         shutil.rmtree(stage, ignore_errors=True)
-        for e in items:
-            if e.mod == mod:
-                target = stage / e.rel.split("/", 2)[2]
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(e.data)
+        for e in sorted((e for e in items if e.mod == mod), key=lambda e: (not e.rel.endswith("/mod.json"), e.rel)):
+            target = stage / e.rel.split("/", 2)[2]
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(e.data)
+            notify("write", target)
         os.replace(stage, home.file(f"mods/{mod}"))
+        notify("rename", stage, home.file(f"mods/{mod}"))
     return new_mods
 
 
 def pull(ctx: Context) -> int:
     """Brings files edited in Herdr back into the repo. A developer command."""
+    recover(ctx)
     data = ctx.home.load_manifest()
+    other = other_checkout(ctx, data)
+    if other:
+        print(f"Not pulling: another checkout installed into this Herdr home last ({manifest_mod.describe(other)});"
+              " pull from there, or `install --take-over` here first.")
+        return 1
     manifest = data.setdefault("files", {})
     pulled = left = 0
     packages = ctx.packages()
@@ -312,8 +437,13 @@ def pull_built(ctx: Context, e: Entry, dest: Path) -> bool:
 def uninstall(ctx: Context, name: str | None = None) -> int:
     """Removes what install wrote (all of it, or one profile's), and takes back what it added to
     profiles.json and keys.json where that's still exactly as it left it."""
+    recover(ctx)
     data = ctx.home.load_manifest()
     have = manifest_mod.installed(data)
+    other = other_checkout(ctx, data)
+    if other:
+        print(f"  note      another checkout installed into this Herdr home last ({manifest_mod.describe(other)});"
+              " uninstalling what it recorded")
     try:
         packages = ctx.packages()
     except spec.SpecError:
@@ -346,7 +476,23 @@ def uninstall(ctx: Context, name: str | None = None) -> int:
     files = data.get("files", {})
     rels = sorted(rel for rel in files if name is None or manifest_mod.owner(data, rel, owners) == name)
     merge = personal.plan_removal(names, ctx.home, data, packages, everything=name is None)
+    if name is None:
+        after = None
+    else:
+        after = copy.deepcopy(data)
+        for rel in rels:
+            del after["files"][rel]
+            after.get("owners", {}).pop(rel, None)
+        manifest_mod.upgrade(after, owners)
+        after["installed"].remove(name)
+        if name in after["profiles"]:
+            after["profiles"].remove(name)  # installing it again is a first time again
+        after["added"].pop(name, None)
+        if name not in after["uninstalled"]:
+            after["uninstalled"].append(name)  # `install` with no names leaves it out from now on
+    planned = merge.planned()
     with finish_first():
+        begin(ctx, "uninstall", after, planned)
         keeping = mods_kept(rels, ctx.home, files)
         for rel in rels:
             if ctx.home.linked(rel):
@@ -358,23 +504,25 @@ def uninstall(ctx: Context, name: str | None = None) -> int:
                 print(f"  removed   {rel}")
             else:
                 print(f"  kept      {rel} (edited in Herdr; it's yours now)")
-            del files[rel]
-            data.get("owners", {}).pop(rel, None)
-        merge.apply()
         if name is None:
-            ctx.home.manifest_path.unlink(missing_ok=True)
-        else:
-            manifest_mod.upgrade(data, owners)
-            data["installed"].remove(name)
-            if name in data["profiles"]:
-                data["profiles"].remove(name)  # installing it again is a first time again
-            data["added"].pop(name, None)
-            if name not in data["uninstalled"]:
-                data["uninstalled"].append(name)  # `install` with no names leaves it out from now on
-            ctx.home.save_manifest(data)
+            remove_folders(ctx.home, data.get("folders", []))
+        merge.apply(planned)
+        finish(ctx, after)
     print(f"Uninstalled {name or 'everything'}." + (f" `install` leaves it out from now on; `install {name}`"
                                                      " brings it back." if name else ""))
     return 0
+
+
+def remove_folders(home: Home, made: list) -> None:
+    """The layouts/ themes/ mods/ folders install made, if nothing (but .DS_Store) is left in them."""
+    for kind in made:
+        folder = home.file(kind)
+        if kind not in KINDS or folder.is_symlink() or not folder.is_dir():
+            continue
+        if all(p.name == ".DS_Store" and p.is_file() for p in folder.iterdir()):
+            shutil.rmtree(folder)
+            notify("delete", folder)
+            print(f"  removed   {kind}/ (install made it; nothing is left in it)")
 
 
 def check(ctx: Context) -> int:
@@ -403,6 +551,12 @@ def check(ctx: Context) -> int:
             failed += 1
             print(f"  invalid   {err}")
     program = herdr.binary()
+    override = os.environ.get("HERDR_APP_BIN")
+    if program is None and override:
+        print(f"  FAILED    HERDR_APP_BIN={override}: {herdr.why_not(override)}, so mods were not checked."
+              " Point it at herdr-app, or unset it to use the one on PATH")
+        print(f"{failed + 1} check(s) failed.")
+        return 1
     if program is None:
         print("  skipped   herdr-app not found: mods not checked (a local check: run it where Herdr is)")
         print("Checks passed, but mods not checked." if not failed else f"{failed} check(s) failed.")

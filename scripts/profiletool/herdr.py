@@ -32,6 +32,17 @@ def binary() -> str | None:
     return shutil.which("herdr-app")
 
 
+def why_not(path: str) -> str:
+    """Why `path` can't be run as herdr-app."""
+    if not os.path.lexists(path):
+        return "not found (no such file)"
+    if not os.path.exists(path):
+        return "not found (a symlink to nothing)"
+    if os.path.isdir(path):
+        return "a folder, not a program"
+    return "not a program you can run (not executable)"
+
+
 def parse(text: str) -> tuple[tuple[int, int, int], bool, str] | None:
     """The first x.y.z in `text`, whether it's a pre-release (x.y.z-beta) and as written; or None."""
     m = VERSION.search(text)
@@ -63,7 +74,7 @@ def require(minimum: tuple[int, int, int] = MIN_VERSION) -> str:
     need = f"Herdr app {show(minimum)} or newer"
     program = binary()
     if program is None:
-        where = (f"HERDR_APP_BIN={os.environ['HERDR_APP_BIN']} isn't a program you can run"
+        where = (f"HERDR_APP_BIN={os.environ['HERDR_APP_BIN']}: {why_not(os.environ['HERDR_APP_BIN'])}"
                  if os.environ.get("HERDR_APP_BIN") else "herdr-app isn't on PATH")
         raise SpecError(f"{where}. These profiles need {need} (https://herdr.dev). If it's installed,"
                         f" put herdr-app on PATH or set HERDR_APP_BIN to it; {SKIP}.")

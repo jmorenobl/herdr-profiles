@@ -24,6 +24,8 @@ def main(argv: list[str] | None = None) -> int:
                                    " removes one).")
     p.add_argument("profiles", nargs="*", metavar="PROFILE", help="profiles to install (default: all but those uninstalled on purpose)")
     p.add_argument("--force", action="store_true", help="overwrite files edited in Herdr since the last install")
+    p.add_argument("--take-over", action="store_true",
+                   help="install even though another checkout of this repo installed last (this one then owns the home)")
     p.add_argument("--set", action="append", default=[], metavar="PROFILE.SETTING=VALUE",
                    help="answer a new profile's question in advance (repeatable), e.g. ideas.folder=~/notes/ideas")
     p.add_argument("--skip-version-check", action="store_true",
@@ -41,7 +43,7 @@ def main(argv: list[str] | None = None) -> int:
         "status": lambda: commands.status(ctx),
         "install": lambda: commands.install(ctx, names=args.profiles, force=args.force, sets=args.set,
                                             prompt=input if sys.stdin.isatty() and sys.stdout.isatty() else None,
-                                            version_check=not args.skip_version_check),
+                                            version_check=not args.skip_version_check, take_over=args.take_over),
         "pull": lambda: commands.pull(ctx),
         "uninstall": lambda: commands.uninstall(ctx, args.profile),
         "check": lambda: commands.check(ctx),

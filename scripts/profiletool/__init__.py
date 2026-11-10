@@ -2,9 +2,10 @@
 
 Modules, from the bottom up:
 
-  files     reading and writing files safely (atomic writes, hashes, JSON)
+  files     reading and writing files safely (atomic writes, hashes, JSON, the write hook)
+  jsonedit  the smallest textual edit to a JSON file of the person's own
   home      the Herdr home: where things go, what Herdr ships
-  manifest  what install wrote and added, and which profiles are installed
+  manifest  what install wrote and added, which profiles and checkout; the journal
   herdr     the herdr-app binary and its version
   spec      profile.json: loading, validation, the package model
   build     layouts built from a recipe (base + inserts + settings + switcher)
