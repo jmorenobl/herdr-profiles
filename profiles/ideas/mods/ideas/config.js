@@ -28,10 +28,13 @@ async function settings() {
 }
 
 // The same rule the installer uses for a folder answer (scripts/profiletool/spec.py, check_folder):
-// surrounding whitespace dropped, then one line, starting with / or ~/, no // and no . or .. parts,
-// and not /, the home folder or a folder above it. Returns { path (expanded) } or { problem }.
+// no \x1c-\x1f, C1 control or BOM anywhere (trim() and Python's strip() disagree on those), then
+// surrounding whitespace dropped, one line, starting with / or ~/, no // and no . or .. parts,
+// and not /, the home folder or a folder above it, whatever the letter case (macOS's disk ignores
+// it: "/users" is above "/Users/me"). Returns { path (expanded) } or { problem }.
 export function checkFolder(value) {
   if (typeof value !== "string" || !value.trim()) return { problem: "must be a folder (a string)" };
+  if (/[\u001c-\u001f\u0080-\u009f\ufeff]/.test(value)) return { problem: "can't contain control characters (tabs, newlines, …)" };
   let v = value.trim();
   if (CONTROL.test(v)) return { problem: "can't contain control characters (tabs, newlines, …)" };
   if (v !== "/" && v.endsWith("/")) v = v.replace(/\/+$/, "") || "/";
@@ -41,7 +44,8 @@ export function checkFolder(value) {
   if (v.split("/").some((p) => p === "." || p === "..")) return { problem: "can't have . or .. in it" };
   const path = v.startsWith("~/") ? home().replace(/\/+$/, "") + v.slice(1) : v;
   const h = home().replace(/\/+$/, "") || "/";
-  if (path === h || h.startsWith(path + "/")) return { problem: "can't be / or the home folder, or a folder above it" };
+  const fold = (p) => p.normalize("NFC").toLowerCase();
+  if (fold(path) === fold(h) || fold(h).startsWith(fold(path) + "/")) return { problem: "can't be / or the home folder, or a folder above it" };
   return { path };
 }
 

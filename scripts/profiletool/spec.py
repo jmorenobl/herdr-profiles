@@ -33,7 +33,9 @@ placeholder must name an `ask` setting; an `ask` setting can't also be in
 Every answer is one line with no control characters. A "folder" answer
 starts with "/" or "~/", has no "." or ".." parts, and isn't "/", "~" or the
 home folder or a folder above it (a rule there would match every project),
-and has no "//". Surrounding whitespace is dropped. The default must pass
+and has no "//"; letter case doesn't count in that check ("/users" is above
+"/Users/me"). Surrounding whitespace is dropped; \x1c-\x1f, the C1 controls
+(\x80-\x9f) and a BOM are refused anywhere. The default must pass
 too (in profile.json, and again against the real home at install).
 
 Schema 1 (a "layout" string naming layouts/<name>.json) is still read.
@@ -42,6 +44,7 @@ Schema 1 (a "layout" string naming layouts/<name>.json) is still read.
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -54,6 +57,9 @@ TOP_KEYS = {"schema", "name", "description", "default", "layout", "settings", "a
 ASK_KEYS = {"setting", "question", "default"}
 ASK_KINDS = ("text", "folder")
 CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+# Where Python's strip() and JS's trim() disagree (\x1c-\x1f and \x85 are whitespace only to
+# Python, the BOM only to JS), plus the other C1 controls: refused anywhere, before stripping.
+EXOTIC = re.compile("[\x1c-\x1f\x80-\x9f\ufeff]")
 SETTING = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 PLACEHOLDER = re.compile(r"\{([^{}]*)\}")
 LAYOUT_KEYS = {"name", "source", "base", "insert", "set"}
@@ -99,6 +105,8 @@ class Ask:
 
     def check(self, value: str, home: Path | None = None) -> tuple[str, str | None]:
         """(the answer as it will be stored, None) or (value, why it can't be used)."""
+        if EXOTIC.search(value):
+            return value.strip(), "it can't contain control characters (tabs, newlines, …)"
         value = value.strip()
         if not value:
             return value, "it can't be empty"
@@ -122,11 +130,17 @@ def check_folder(value: str, home: Path) -> tuple[str, str | None]:
         return value, "it can't have // in it"
     if any(part in (".", "..") for part in value.split("/")):
         return value, "it can't have . or .. in it"
-    full = value.replace("~", str(home).rstrip("/"), 1) if value.startswith("~") else value
-    home_s = str(home).rstrip("/") or "/"
+    full = fold(value.replace("~", str(home).rstrip("/"), 1) if value.startswith("~") else value)
+    home_s = fold(str(home).rstrip("/") or "/")
     if full == home_s or home_s.startswith(full + "/"):
         return value, "it can't be / or your home folder, or a folder above it: a rule there would match every project"
     return value, None
+
+
+def fold(path: str) -> str:
+    """A path as a case-insensitive disk (macOS's) sees it: "/users" is "/Users". Folders are
+    compared folded everywhere: on a case-sensitive disk that only refuses a few odd folders more."""
+    return unicodedata.normalize("NFC", path).lower()
 
 
 @dataclass(frozen=True)

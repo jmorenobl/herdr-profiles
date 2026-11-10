@@ -19,7 +19,12 @@ JS = REPO / "tests" / "js"
 NODE = shutil.which("node")
 # Folders both checks (config.js checkFolder, spec.py check_folder) must agree on, with home /home/u.
 PARITY = ["~/ideas", " ~/ideas\n", "~/ideas/", "/srv/x", "/srv/x//", "~", "~/", "/", "/home", "/home/", "/home/u",
-          "/home/u/", "/home//u", "//home/u", "~//x", "~/a/../b", "~/./x", "rel", "~/a\tb", "/home/u2", "/home/u/x"]
+          "/home/u/", "/home//u", "//home/u", "~//x", "~/a/../b", "~/./x", "rel", "~/a\tb", "/home/u2", "/home/u/x",
+          # letter case (0.9.2): above the home whatever the case; below it, fine
+          "/HOME", "/Home/U", "/home/U/", "/HOME/u2", "/Home/U/x",
+          # whitespace strip() and trim() disagree on, and C1 controls (0.9.2): refused in both
+          "\x1c~/ideas", "~/ideas\x1f", "\x85~/ideas", "~/ideas\x85", "\ufeff~/ideas", "~/ide\ufeffas", "~/a\x9bb",
+          "\u00a0~/ideas\u3000"]
 
 
 @unittest.skipUnless(NODE, "node is not installed")
