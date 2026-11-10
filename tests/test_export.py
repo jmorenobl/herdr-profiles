@@ -313,6 +313,7 @@ class FoundByReviewTest(unittest.TestCase):
         (out / "f").write_text(f"{OWNER}\n")
         self.f.git("init", "-q", cwd=out)
         self.f.git("config", "user.email", "pub@example.invalid", cwd=out)
+        self.f.git("config", "user.name", "Pub", cwd=out)  # CI has no identity to fall back on
         self.f.git("add", "f", cwd=out)
         env = dict(self.f.env, GIT_AUTHOR_EMAIL=OWNER, GIT_COMMITTER_EMAIL=OWNER,
                    GIT_AUTHOR_DATE="1700000000 +0000", GIT_COMMITTER_DATE="1700000000 +0000")
