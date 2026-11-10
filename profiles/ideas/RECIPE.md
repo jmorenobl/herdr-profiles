@@ -67,36 +67,61 @@ with its notes and actions, and one key captures a new idea from any space.
   click still selects; leaving the board cancels the drag, and a drop ends it
   (nothing of the drag is left over). Clicking a card selects it everywhere.
   A drop that can't save the order (`.board.json` changed on disk) changes
-  nothing, the status included, and says to try again.
+  nothing, the status included, and says to try again; one whose status
+  can't be written (`idea.md` changed on disk) puts the saved order back.
 - The review goes through the stale ideas oldest first. Keep going moves a
   seed to exploring and otherwise only stamps `updated:`; Park sets
   `parked`; Drop sets `dropped` and `why:` (it needs the line: Enter saves,
   Esc cancels); Skip changes nothing. Each choice is written at once, in
-  order. Finishing the queue writes `reviewed:` (today) to `.board.json`;
-  leaving early doesn't. Keys work once the review has focus (it takes it
+  order, on the file as it is on disk then (an agent may have written it
+  meanwhile: a write that finds it changed reads it again and tries once
+  more). Finishing the queue writes `reviewed:` (today) to `.board.json`;
+  leaving early doesn't. A write that fails says so ("Could not save the
+  review of an idea", "Could not save the review") and isn't counted in the
+  end's summary; a failed `reviewed:` leaves the Review button due. Keys work once the review has focus (it takes it
   when started from the button, or on a click).
 - `ideas.review` (`herdr-app do ideas.review`, or a key in `keys.json`)
   starts the review from anywhere in the ideas space: it asks the board
-  through `shared("ideas.review")` and opens the Board tab if it's closed.
+  through `shared("ideas.review")` (the time of the request) and opens the
+  Board tab if it's closed; a board that opens within 15 seconds of a
+  request takes it, and starts once its ideas are read.
 - An idea whose type changes during a review stays in the queue: the side
   panel appends each move to `shared("ideas.moved")` (`[{seq, from, to}]`,
   the last 20), and the review replays, in order, only the moves made after
   it started.
 - A dropped idea's detail shows "Dropped: <why>".
-- Autocommit: if the ideas folder is a git repo, the side panel (only it,
-  so copies don't race) runs `git add -A` (leaving out `.DS_Store` files even
-  if the folder's `.gitignore` doesn't) and commits one minute after the last
-  change it sees, and once when it starts. A timer that fires while a commit
-  runs waits for another quiet minute after it, so nothing is left behind. Subjects: "Add idea: <title>",
+- Autocommit: if the ideas folder is a git repo of its own (the top of its
+  work tree), the side panel (only it, so copies don't race) runs `git add -A`
+  (leaving out `.DS_Store` files even if the folder's `.gitignore` doesn't)
+  and commits one minute after the last change it sees, and once when it
+  starts. A timer that fires while a commit runs waits for another quiet
+  minute after it, so nothing is left behind; when the panel goes (the layout
+  switches away, the app quits) a commit still waiting is made right away.
+  New files count even with `status.showUntrackedFiles=no`. Subjects: "Add idea: <title>",
   "Update: <title>", "Remove idea: <title>", "Update N ideas", "Board: order
-  and review"; the body lists the files. A failure warns once until a commit
+  and review" (non-ASCII names as they are, cut at 72 characters); the body
+  lists the files. It doesn't commit, and warns, when the folder is inside a
+  bigger repo (a commit there would take whatever else is staged), or while a
+  merge, rebase, cherry-pick or revert is under way, with unresolved
+  conflicts or on a detached HEAD (it would conclude the person's operation,
+  conflict markers and all); finishing that in a terminal lets it go on. A failure warns once until a commit
   works again. `"autocommit": false` under `profiles.ideas` turns it off.
 - Status chips rewrite `status:` and stamp `updated:`. Type chips move the
-  idea's folder to the new type and show its `idea.md` again.
+  idea's folder to the new type and show its `idea.md` again. A type change
+  is refused, with a notice naming the tab, while a terminal (an agent, an
+  editor) works inside the idea's folder: what it wrote next would bring the
+  old folder back and split the idea. A second click before a change lands
+  is ignored.
+- The detail's note file (notes.md, …) belongs to the idea it was chosen on:
+  selecting another idea, here, on the board or by capturing, shows that
+  one's `idea.md`. The shown file is read again on every change in the
+  folder, so an agent writing it is followed.
 - **Develop with Claude** opens a tab named after the idea, running `claude`
   (the `agent` setting; the button says its name) in the idea's folder, asked to read `idea.md`, start with questions and keep
-  notes beside it. If that tab exists, it's selected instead. Showing that
-  tab selects its idea in the panel.
+  notes beside it. If that tab exists, it's selected instead: a tab with a
+  terminal working inside the idea's folder, else a tab named after the idea
+  (only a named tab, and not one working in another idea). Showing that tab
+  selects its idea in the panel.
 - **Start project** (ripe ideas without a project) opens the same kind of
   tab, asked to follow "Starting a project" in the folder's AGENTS.md, in
   `projectsRoot` when it's set, else proposing a location and asking.
@@ -104,7 +129,10 @@ with its notes and actions, and one key captures a new idea from any space.
   opens a new space there (where the profile switcher picks its layout).
 - `ctrl-shift-i` (any space, any layout) and **+ New** open the capture
   dialog (520×410): idea, notes, type. Enter saves, Esc cancels; the new idea
-  becomes the selected one.
+  becomes the selected one. Its folder is the title in lowercase letters and
+  digits of any script, accents off Latin letters and `ß`, `æ`, `ø`, `ł`, …
+  spelled out ("Straße" → `strasse`, "日本語" stays), the rest dashes, at most
+  48 characters (`idea` when nothing is left; `-2`, `-3` when taken).
 - Everything follows the folder live (`watchFolder`).
 
 ## Built from
@@ -180,6 +208,16 @@ with its notes and actions, and one key captures a new idea from any space.
   ideas that aren't types (`untypedFolders`): their ideas don't show. A
   drop rewrites `.board.json` from the shown ideas and appends the saved
   ids of types not shown (`hiddenOrder`), so their order survives.
+- `tests/test_ideas_store.py` runs the whole mod under node on throwaway
+  folders and git repos, with a stand-in `herdr` doing real file writes and
+  git (`tests/js/herdr_git_stub.js`) and a stand-in UI that takes any builder
+  call (`tests/js/gpui_view_stub.js`): autocommit (a bigger repo, a merge or
+  rebase under way, a detached HEAD, `showUntrackedFiles=no`, non-ASCII
+  names, emoji subjects, committing on close), creating, listing, moving and
+  updating ideas, slugs, `.board.json`, ages across daylight saving, a drop
+  whose status write fails, review writes, the review asked for with the
+  Board tab closed, the note file following the selection, type changes
+  under a working tab and double clicks, and finding agent tabs.
 - `tests/test_ideas_mod.py` runs `config.js`, `ui.js`, `actions.js` and
   `store.js`, plus `capture.js`, `board.js` and `common.js` on a stand-in
   view, under node with a stand-in `herdr` (`tests/js/`), when node is
@@ -201,8 +239,11 @@ with its notes and actions, and one key captures a new idea from any space.
   `idea.md` don't refresh an idea unless `updated:` is stamped too (the
   folder's AGENTS.md asks agents to).
 - Only `<type>/<slug>/idea.md` counts as an idea; loose files are ignored.
-- Claude tabs are found again by name (the idea's title, cut to 28
-  characters); renaming the tab breaks the link.
+- Claude tabs are found again by a terminal working in the idea's folder,
+  else by name (the idea's title, cut to 28 characters): a renamed tab whose
+  agent left the folder isn't found.
+- Ages are whole local days (rounded, so a daylight saving change doesn't
+  make an idea a day younger).
 - `Develop with Claude` assumes `claude` (or the `agent` setting) is on the
   PATH. Reveal runs `open` on macOS ("Show in Finder") and `xdg-open` on
   Linux ("Show in folder"), chosen by `window().platform`; on Windows there's

@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **Ideas, autocommit.** It no longer commits into a bigger repo the ideas
+  folder sits in (that took whatever else was staged there), nor while a
+  merge, rebase, cherry-pick or revert is under way, with conflicts or on a
+  detached HEAD (that concluded the operation with conflict markers): it
+  warns instead. New ideas are seen with `status.showUntrackedFiles=no`;
+  non-ASCII names stay readable in subjects; subjects and tab names no
+  longer cut an emoji in half; a pending commit is made when the side panel
+  closes.
+- **Ideas.** A type change is refused while a terminal works inside the
+  idea's folder (it split the idea in two); a double click on a type or
+  status chip no longer reports a failure. Agent tabs are found by a terminal
+  in the idea's folder, by name only for named tabs. The side panel's note
+  file follows the selected idea and is re-read when it changes on disk.
+  `ideas.review` with the Board tab closed now starts the review. A drop
+  whose status can't be written puts the order back; review writes retry
+  once on a changed file and say what failed. Ages no longer come out a day
+  short after a daylight saving change. New ideas' folders keep letters of
+  any script (`Straße` → `strasse`, `日本語` stays). Ideas are read in
+  parallel on reload.
 - **Files panel, markdown images.** Only an image alone on its line is drawn
   (a badge `[![CI](…)](link)` as one picture that opens its link); an image
   in a table, a list or a row of badges shows its alt text, and images in

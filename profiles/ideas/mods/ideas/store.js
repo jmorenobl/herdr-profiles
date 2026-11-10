@@ -65,12 +65,14 @@ export async function listIdeas(folder, types) {
     if (file === "idea.md") entry.hasIdea = true; else entry.files.push(file);
     byId.set(id, entry);
   }
-  const out = [];
-  for (const e of byId.values()) {
-    if (!e.hasIdea) continue;
+  // Read in parallel: a reload follows every batch of changes the folder watch reports.
+  const read = await Promise.all([...byId.values()].filter((e) => e.hasIdea).map(async (e) => {
     const dir = `${folder}/${e.id}`;
     const path = `${dir}/idea.md`;
-    const text = await readTextFile(path).catch(() => null);
+    return { e, dir, path, text: await readTextFile(path).catch(() => null) };
+  }));
+  const out = [];
+  for (const { e, dir, path, text } of read) {
     if (text === null) continue;
     const { meta, body } = parse(text);
     const { hasIdea: _, ...rest } = e;
@@ -98,11 +100,12 @@ export const today = () => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 };
 
-// Whole days from `date` (YYYY-MM-DD) to today; null if there's no date.
+// Whole days from `date` (YYYY-MM-DD) to today; null if there's no date. Rounded: across a
+// daylight saving change two local midnights are 23 or 25 hours apart.
 export function daysSince(date) {
   const then = date ? Date.parse(`${date}T00:00:00`) : NaN;
   if (Number.isNaN(then)) return null;
-  return Math.floor((Date.parse(`${today()}T00:00:00`) - then) / 86400000);
+  return Math.round((Date.parse(`${today()}T00:00:00`) - then) / 86400000);
 }
 
 // Open ideas nobody has touched in a month: the review goes through these.
@@ -123,12 +126,21 @@ export function ago(date) {
   return `${Math.floor(days / 365)}y`;
 }
 
+// Letters the accents-off step below leaves alone, written the usual way in ASCII.
+const SPELLED = { "ß": "ss", "æ": "ae", "œ": "oe", "ø": "o", "ł": "l", "đ": "d", "ð": "d", "þ": "th", "ı": "i", "ĸ": "k" };
+
+// A folder name: lowercase letters and digits of any script, accents off Latin letters
+// ("Ça va" -> "ca-va", "Straße" -> "strasse", "日本語" stays), the rest turned into dashes.
 export function slugify(text) {
   let s = String(text).toLowerCase();
-  try { s = s.normalize("NFD").replace(/[̀-ͯ]/g, ""); } catch { /* keep going */ }
-  s = s.replace(/ñ/g, "n").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-  return s.slice(0, 48).replace(/-+$/, "") || "idea";
+  try { s = s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").normalize("NFC"); } catch { /* keep going */ }
+  s = s.replace(/[ßæœøłđðþıĸ]/g, (c) => SPELLED[c]).replace(/[^\p{L}\p{N}\p{M}]+/gu, "-").replace(/^-+|-+$/g, "");
+  // Cut by characters, not UTF-16 units, so no emoji or CJK letter is split in half.
+  return Array.from(s).slice(0, 48).join("").replace(/-+$/, "") || "idea";
 }
+
+// At most `n` characters (code points): never half of a surrogate pair.
+export const cut = (text, n) => Array.from(String(text)).slice(0, n).join("");
 
 const clean = (v) => String(v ?? "").replace(/[\r\n]+/g, " ").trim();
 
@@ -200,16 +212,47 @@ export async function createIdea(folder, { title, body, type, origin }, types) {
   return dir.slice(folder.length + 1);
 }
 
-// Commits everything that changed in the ideas folder, if it's a git repo.
+// Why git can't be committed to now (a merge, rebase, cherry-pick or revert under way,
+// conflicts, no branch), or null. Committing then would conclude the person's operation,
+// conflict markers and all, and `git add` would mark the conflicts resolved.
+const BUSY = [["MERGE_HEAD", "a merge"], ["CHERRY_PICK_HEAD", "a cherry-pick"], ["REVERT_HEAD", "a revert"],
+  ["rebase-merge", "a rebase"], ["rebase-apply", "a rebase or git am"]];
+
+// The first of its arguments that exists (relative ones from $1), as its position from 1, or nothing.
+const FIRST = 'cd "$1" || exit 1; shift; n=0; for p in "$@"; do n=$((n+1)); [ -e "$p" ] && { echo $n; exit 0; }; done; true';
+
+async function gitBusy(git, folder) {
+  const r = await git("rev-parse", ...BUSY.flatMap(([p]) => ["--git-path", p]));
+  const paths = r.stdout.split("\n").filter(Boolean);
+  if (r.code !== 0 || paths.length !== BUSY.length) return "git can't read the repo";
+  const found = Number((await exec("sh", ["-c", FIRST, "busy", folder, ...paths])).stdout.trim());
+  if (found) return `${BUSY[found - 1][1]} is in progress`;
+  if ((await git("ls-files", "--unmerged")).stdout.trim()) return "it has unresolved conflicts";
+  if ((await git("symbolic-ref", "-q", "HEAD")).code !== 0) return "it isn't on a branch (detached HEAD)";
+  return null;
+}
+
+// Commits everything that changed in the ideas folder, if it's a git repo of its own.
 // The subject names the idea when only one changed. Returns the subject, or null.
+// Throws (the side panel warns once) when the folder is inside a bigger repo or git is busy.
 export async function autocommit(folder, ideas, types) {
   const git = (...args) => exec("git", ["-C", folder, ...args], { timeout: 20000 });
-  if ((await git("rev-parse", "--is-inside-work-tree")).code !== 0) return null;
-  if (!(await git("status", "--porcelain")).stdout.trim()) return null;
+  const top = await git("rev-parse", "--is-inside-work-tree", "--show-prefix");
+  if (top.code !== 0 || top.stdout.split("\n")[0] !== "true") return null;
+  // A folder inside a bigger repo (a notes or dotfiles repo): a commit there would take
+  // whatever else is staged in it, so only a folder that is its repo's top is committed.
+  const prefix = top.stdout.split("\n")[1] ?? "";
+  if (prefix) throw new Error(`The ideas folder is inside a bigger git repo (as ${prefix.replace(/\/$/, "")}): autocommit only commits a folder that is a repo of its own. Set "autocommit": false to stop this warning.`);
+  // -uall: status.showUntrackedFiles=no would hide new ideas.
+  if (!(await git("status", "--porcelain", "--untracked-files=all")).stdout.trim()) return null;
+  const busy = await gitBusy(git, folder);
+  if (busy) throw new Error(`Not committing while ${busy} in the ideas folder; finish it in a terminal.`);
   // Everything but Finder's .DS_Store files, even when the folder's .gitignore doesn't list them.
   if ((await git("add", "-A", "--", ".", ":(exclude,glob)**/.DS_Store")).code !== 0) throw new Error("git add failed");
-  const changes = (await git("diff", "--cached", "--name-status", "--no-renames")).stdout.split("\n").filter(Boolean)
-    .map((line) => { const [st, ...path] = line.split("\t"); return [st[0], path.join("\t").replace(/^"|"$/g, "")]; });
+  // -z: paths as they are (no quoting of non-ASCII names), "<status>\0<path>\0" each.
+  const z = (await git("diff", "--cached", "--name-status", "--no-renames", "-z")).stdout.split("\0");
+  const changes = [];
+  for (let n = 0; n + 1 < z.length; n += 2) if (z[n]) changes.push([z[n][0], z[n + 1]]);
   if (!changes.length) return null;
   const titles = new Map(ideas.map((i) => [i.id, i.title]));
   const touchedIds = new Map();             // id -> "add" | "remove" | "update"
@@ -229,7 +272,7 @@ export async function autocommit(folder, ideas, types) {
   } else if (touchedIds.size > 1) subject = `Update ${touchedIds.size} ideas`;
   else subject = changes.every(([, p]) => p === ".board.json") ? "Board: order and review" : "Update the ideas folder";
   const body = changes.map(([st, p]) => `${st} ${p}`).join("\n");
-  const r = await git("commit", "-q", "-m", subject.slice(0, 72), "-m", body);
+  const r = await git("commit", "-q", "-m", cut(subject, 72), "-m", body);
   if (r.code !== 0) throw new Error(r.stderr.trim() || "git commit failed");
   return subject;
 }

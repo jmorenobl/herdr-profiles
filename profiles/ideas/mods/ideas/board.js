@@ -12,15 +12,20 @@ import { sortMode, REVIEW } from "./common.js";
 const SORTS = [["manual", "Manual"], ["recent", "Recent"], ["az", "A–Z"]];
 
 export class Board {
-  // Saves the order; `then` (the status change of a drop) runs only if that worked,
-  // so a failed drop changes nothing, as its "try again" says.
+  // Saves the order; `then` (the status change of a drop) runs only if that worked, and if it
+  // fails the order saved before it is put back: a failed drop changes nothing, as its
+  // "try again" says.
   saveOrder(order, cx, then) {
+    const before = this.order;
     this.order = order;
     cx.spawn(async (cx) => {
       let saved = false;
       try { this.orderText = await writeBoard(this.folder, { order, reviewed: this.reviewed }, this.orderText); saved = true; }
       catch { notify({ title: "The board order changed on disk", body: "Reloaded it; try again.", level: "warning", timeout: 4000 }); }
-      if (saved && then) await then();
+      if (saved && then && !(await then())) {
+        try { this.orderText = await writeBoard(this.folder, { order: before, reviewed: this.reviewed }, this.orderText); }
+        catch { /* changed on disk meanwhile: the reload shows what's there */ }
+      }
       await this.reload(cx);
     });
   }
@@ -50,9 +55,10 @@ export class Board {
     if (sortMode() !== "manual") setShared("ideas.sort", "manual");
     const moved = idea.status !== status;
     if (moved) this.ideas = this.ideas.map((i) => (i.id === idea.id ? { ...i, status } : i));
+    // true when the status was written.
     this.saveOrder(order, cx, moved ? async () => {
-      try { await updateIdea(idea, { status }); }
-      catch { notify({ title: "The idea changed on disk", body: "Reloaded it; try again.", level: "warning", timeout: 4000 }); }
+      try { await updateIdea(idea, { status }); return true; }
+      catch { notify({ title: "The idea changed on disk", body: "Reloaded it; try again.", level: "warning", timeout: 4000 }); return false; }
     } : null);
     cx.notify();
   }
@@ -161,7 +167,9 @@ export class Board {
 
   board(t) {
     const token = shared(REVIEW) ?? null;
-    if (token !== this.reviewToken) { this.reviewToken = token; this.startReview(null); }
+    if (token !== this.reviewToken) { this.reviewToken = token; this.reviewPending = true; }
+    // Waits for the first load: before it there are no ideas, so no queue.
+    if (this.reviewPending && this.loaded) { this.reviewPending = false; this.startReview(null); }
     if (this.review) return this.reviewView(t);
     const shown = this.shown();
     const stale = this.ideas.filter(isStale).length;

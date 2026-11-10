@@ -10,7 +10,7 @@ import { InputState } from "gpui-base";
 import { props, theme, watchFolder, shared, nextCommand, notify } from "herdr";
 import { defaultConfig, ideasConfig } from "./config.js";
 import { untypedFolders, untypedNotice } from "./store.js";
-import { Common, REVIEW } from "./common.js";
+import { Common, REVIEW, freshRequest } from "./common.js";
 import { Board } from "./board.js";
 import { Review } from "./review.js";
 import { Side } from "./side.js";
@@ -47,6 +47,9 @@ export default class Ideas extends View {
     this.fileText = null;
     this.lastTab = null;
     this.reviewToken = shared(REVIEW) ?? null;
+    // A request made just before this board opened (ideas.review with the Board tab closed opens it):
+    // started once the ideas are loaded (board.js). Older tokens are past requests.
+    this.reviewPending = this.role === "board" && freshRequest(this.reviewToken);
     // "ideas.review" (a key, or `herdr-app do ideas.review`) starts the review on the board.
     cx.spawn(async () => { for (;;) { if ((await nextCommand()) === "review") this.requestReview(); } });
     cx.spawn(async (cx) => {
@@ -69,6 +72,11 @@ export default class Ideas extends View {
         this.scheduleCommit(cx);
       }
     });
+  }
+
+  // The side panel commits a pending change before it goes (close() has about 250 ms).
+  async close() {
+    if (this.role === "side") await this.closeSide();
   }
 
   render() {

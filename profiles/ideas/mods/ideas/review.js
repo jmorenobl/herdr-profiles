@@ -2,8 +2,8 @@
 // Methods of the Ideas view (main.js), copied onto it: `this` is the view.
 import { div } from "gpui-kit";
 import { v_flex, h_flex, Input, TextView } from "gpui-base";
-import { notify, setShared } from "herdr";
-import { updateIdea, writeBoard, ago, today, touched, isStale } from "./store.js";
+import { notify, setShared, readTextFile } from "herdr";
+import { updateIdea, readBoard, writeBoard, ago, today, touched, isStale } from "./store.js";
 import { STATUS_LABEL, statusColor, dot, button } from "./ui.js";
 import { ideasSpace, openBoard, lastMove, followMoves } from "./actions.js";
 import { REVIEW } from "./common.js";
@@ -43,11 +43,37 @@ export class Review {
     return null;
   }
 
-  // Runs board writes one after another, then reloads.
-  queueWrite(cx, write) {
-    this.writes = (this.writes ?? Promise.resolve()).then(write).catch(() =>
-      notify({ title: "The idea changed on disk", body: "Reloaded it; review it again later.", level: "warning", timeout: 4000 }));
+  // Runs the review's writes one after another, then reloads. `write` tries once more when the
+  // first try fails (the file changed on disk: it reads it again); `failed` is the notice
+  // when that fails too, and `done` runs only after a write that worked.
+  queueWrite(cx, write, failed, done) {
+    const attempt = () => write().catch(() => write());
+    this.writes = (this.writes ?? Promise.resolve()).then(attempt)
+      .then(() => done?.(), () => notify({ ...failed, level: "warning", timeout: 5000 }));
     cx.spawn(async (cx) => { await this.writes; await this.reload(cx); });
+  }
+
+  // An idea's change, from the text on disk now (an agent may have written it meanwhile).
+  writeIdea(idea, changes) {
+    let first = true;
+    return async () => {
+      const text = first ? idea.text : await readTextFile(idea.path).catch(() => null);
+      first = false;
+      if (text === null) throw new Error("gone");
+      await updateIdea({ ...idea, text }, changes);
+    };
+  }
+
+  // The day of the review in .board.json, keeping the order on disk now on a retry.
+  writeReviewed(day) {
+    let first = true;
+    return async () => {
+      let { order, text } = { order: this.order, text: this.orderText };
+      if (!first) ({ order, text } = await readBoard(this.folder));
+      first = false;
+      this.orderText = await writeBoard(this.folder, { order, reviewed: day }, text);
+      this.reviewed = day;
+    };
   }
 
   reviewAct(kind, cx) {
@@ -58,19 +84,20 @@ export class Review {
     const changes = kind === "keep" ? (idea.status === "seed" ? { status: "exploring" } : {})
       : kind === "park" ? { status: "parked" }
       : kind === "drop" ? { status: "dropped", why } : null;
-    if (kind === "keep") r.kept++;
-    if (kind === "park") r.parked++;
-    if (kind === "drop") r.dropped++;
     r.at++;
     r.dropping = false;
     this.why.set_value("");
     this.handle.focus();
-    if (changes) this.queueWrite(cx, () => updateIdea(idea, changes));
+    // Counted once written, so the summary says what really changed.
+    const count = { keep: "kept", park: "parked", drop: "dropped" }[kind];
+    if (changes) {
+      this.queueWrite(cx, this.writeIdea(idea, changes),
+        { title: "Could not save the review of an idea", body: `"${idea.title}" didn't change; review it again later.` },
+        () => { r[count]++; });
+    }
     if (!this.reviewIdea()) {
-      this.queueWrite(cx, async () => {
-        this.reviewed = today();
-        this.orderText = await writeBoard(this.folder, { order: this.order, reviewed: this.reviewed }, this.orderText);
-      });
+      this.queueWrite(cx, this.writeReviewed(today()),
+        { title: "Could not save the review", body: "The review's day isn't in .board.json: the Review button stays due." });
     }
     cx.notify();
   }

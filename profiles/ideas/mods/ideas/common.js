@@ -10,14 +10,19 @@ import { typeLabel, chip, matches } from "./ui.js";
 export const sortMode = () => shared("ideas.sort") ?? "manual";
 export const byRecent = (a, b) => touched(b).localeCompare(touched(a)) || a.title.localeCompare(b.title);
 
-export const REVIEW = "ideas.review";   // shared: a new value asks the board to start a review
+export const REVIEW = "ideas.review";   // shared: a new value (Date.now()) asks the board to start a review
+// A request this recent, found by a board that just opened, was made for it.
+const FRESH = 15000;
+export const freshRequest = (token, now = Date.now()) => typeof token === "number" && now - token >= 0 && now - token < FRESH;
 
 export class Common {
   async reload(cx) {
     try {
-      this.ideas = await listIdeas(this.folder, this.config.types);
-      ({ text: this.orderText, order: this.order, reviewed: this.reviewed } = await readBoard(this.folder));
+      const [ideas, board] = await Promise.all([listIdeas(this.folder, this.config.types), readBoard(this.folder)]);
+      this.ideas = ideas;
+      ({ text: this.orderText, order: this.order, reviewed: this.reviewed } = board);
       this.error = null;
+      if (this.role === "side") await this.readShownFile();
     }
     catch (e) { this.error = String(e); }
     this.loaded = true;

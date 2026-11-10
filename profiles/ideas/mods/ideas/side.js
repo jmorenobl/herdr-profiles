@@ -6,7 +6,7 @@ import { v_flex, h_flex, TextView } from "gpui-base";
 import { spaces, run, notify, readTextFile } from "herdr";
 import { STATUSES, updateIdea, moveIdea, autocommit, writeBoard, ago, daysSince, tilde, touched, isStale } from "./store.js";
 import { STATUS_LABEL, statusColor, dot, chip, button, sectionLabel } from "./ui.js";
-import { select, selected, noteMove, ideasSpace, tabFor, develop, startProject, agentName, openProject, reveal, revealLabel, boardTab, openBoard } from "./actions.js";
+import { select, selected, noteMove, ideasSpace, tabFor, workingIn, develop, startProject, agentName, openProject, reveal, revealLabel, boardTab, openBoard } from "./actions.js";
 
 const COMMIT_AFTER = 60000;             // ms of quiet before the side panel commits the folder
 
@@ -15,21 +15,33 @@ export class Side {
   scheduleCommit(cx) {
     if (!this.autocommit) return;
     const n = (this.commitGen = (this.commitGen ?? 0) + 1);
+    this.commitPending = true;          // close() commits right away instead of losing it
     cx.timer.after(COMMIT_AFTER, (cx) => {
       if (n !== this.commitGen) return;
       // A commit still running: wait for another quiet minute after it, so nothing is left behind.
       if (this.committing) { this.commitAgain = true; return; }
-      this.committing = true;
       cx.spawn(async (cx) => {
-        try { await autocommit(this.folder, this.ideas, this.config.types); this.commitWarned = false; }
-        catch (e) {
-          if (!this.commitWarned) notify({ title: "Could not commit the ideas folder", body: String(e.message ?? e), level: "warning", timeout: 6000 });
-          this.commitWarned = true;
-        }
-        this.committing = false;
+        await this.commitNow();
         if (this.commitAgain) { this.commitAgain = false; this.scheduleCommit(cx); }
       });
     });
+  }
+
+  async commitNow() {
+    this.committing = true;
+    this.commitPending = false;
+    try { await autocommit(this.folder, this.ideas, this.config.types); this.commitWarned = false; }
+    catch (e) {
+      if (!this.commitWarned) notify({ title: "Could not commit the ideas folder", body: String(e.message ?? e), level: "warning", timeout: 6000 });
+      this.commitWarned = true;
+    }
+    this.committing = false;
+  }
+
+  // The panel goes (the layout switches away, or the app quits): a commit still waiting for
+  // its quiet minute is made now, within close()'s short time; one already running goes on.
+  async closeSide() {
+    if (this.autocommit && this.commitPending && !this.committing && this.folder) await this.commitNow();
   }
 
   loadCollapsed() {
@@ -45,17 +57,36 @@ export class Side {
 
   // ---------- changes ----------
 
+  // One change at a time per idea: a second click before the first lands would work from the
+  // old text (or the folder that just moved) and fail.
+  busyWith(idea) {
+    this.changing ??= new Set();
+    if (this.changing.has(idea.id)) return true;
+    this.changing.add(idea.id);
+    return false;
+  }
+
   setStatus(idea, status, cx) {
-    if (idea.status === status) return;
+    if (idea.status === status || this.busyWith(idea)) return;
     cx.spawn(async (cx) => {
       try { await updateIdea(idea, { status }); }
       catch { notify({ title: "The idea changed on disk", body: "Reloaded it; try again.", level: "warning", timeout: 4000 }); }
       await this.reload(cx);
+      this.changing.delete(idea.id);
     });
   }
 
   setType(idea, type, cx) {
     if (idea.type === type) return;
+    // Moving the folder under a terminal working in it (an agent, an editor) would split the
+    // idea: whatever it writes next recreates the old folder. Its tab has to go first.
+    const tab = workingIn(idea);
+    if (tab) {
+      const which = !tab.id ? tab.name : tab.named ? `"${tab.name}"` : `Tab ${tab.index}`;
+      notify({ title: "Not moving the idea", body: `${which} is working in its folder. Close that tab, then change the type.`, level: "warning", timeout: 6000 });
+      return;
+    }
+    if (this.busyWith(idea)) return;
     cx.spawn(async (cx) => {
       try {
         const id = await moveIdea(this.folder, idea, type, this.config.types);
@@ -70,18 +101,32 @@ export class Side {
       }
       catch (e) { notify({ title: "Could not move the idea", body: String(e), level: "error", timeout: 6000 }); }
       await this.reload(cx);
+      this.changing.delete(idea.id);
     });
+  }
+
+  // The note file shown instead of idea.md belongs to one idea (`fileFor`): selecting another
+  // one (here, on the board or by capturing) shows that one's idea.md.
+  shownFile(idea) {
+    return this.file && this.fileFor === idea.id && idea.files.includes(this.file) ? this.file : null;
   }
 
   showFile(idea, file, cx) {
     this.file = file;
+    this.fileFor = idea.id;
     this.fileText = null;
     if (!file) return cx.notify();
-    cx.spawn(async (cx) => {
-      const text = await readTextFile(`${idea.dir}/${file}`).catch(() => null);
-      if (this.file === file) { this.fileText = text ?? "Cannot read this file."; cx.notify(); }
-    });
+    cx.spawn(async (cx) => { await this.readShownFile(); cx.notify(); });
     cx.notify();
+  }
+
+  // (Re)reads the shown note file: on showing it and on every reload, so an agent writing it is followed.
+  async readShownFile() {
+    const file = this.file, id = this.fileFor;
+    const idea = file && this.ideas.find((i) => i.id === id);
+    if (!idea || !idea.files.includes(file)) return;
+    const text = await readTextFile(`${idea.dir}/${file}`).catch(() => null);
+    if (this.file === file && this.fileFor === id) this.fileText = text ?? "Cannot read this file.";
   }
 
   // The overview's reminder of the weekly review.
@@ -172,10 +217,11 @@ export class Side {
     const agent = agentName(this.config.agent, this.config.agentName);
     const files = idea.files.filter((f) => /\.(md|txt)$/i.test(f));
     const others = idea.files.length - files.length;
+    const shown = this.shownFile(idea);
     const fileTab = (id, label, file) => div().id(id).px(8).py(3).rounded(6).cursor_pointer().text_size(11.5)
-      .bg(this.file === file ? t.selected : "#00000000").text_color(this.file === file ? t.foreground : t.muted)
+      .bg(shown === file ? t.selected : "#00000000").text_color(shown === file ? t.foreground : t.muted)
       .hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.showFile(idea, file, cx)).child(label);
-    const body = this.file ? (this.fileText ?? "Loading…") : idea.body;
+    const body = shown ? (this.fileText ?? "Loading…") : idea.body;
     return v_flex().id("side-detail").size_full().min_h(0)
       .child(v_flex().flex_none().px(14).pt(12).pb(12).gap(10).border_b(1).border_color(t.border)
         .child(h_flex().gap(8).items_center()
@@ -205,7 +251,7 @@ export class Side {
         .children(files.map((f, n) => fileTab(`d-f-${n}`, f, f)))
         .when(others > 0, (el) => el.child(div().px(6).text_size(11).text_color(t.dim).child(`+${others} other`)))))
       .child(div().id("d-body").flex_1().min_h(0).overflow_y_scrollbar().px(14).py(12).text_size(13)
-        .child(body ? TextView.markdown(`d-md-${idea.id}-${this.file ?? "idea"}`, body).selectable(true)
+        .child(body ? TextView.markdown(`d-md-${idea.id}-${shown ?? "idea"}`, body).selectable(true)
           : div().text_color(t.dim).child(`No notes yet. Develop it with ${agent}, or write in idea.md.`)));
   }
 
@@ -236,6 +282,7 @@ export class Side {
     this.placeBoard();
     this.follow();
     const idea = this.ideas.find((i) => i.id === selected());
+    if (this.file && this.fileFor !== idea?.id) { this.file = null; this.fileText = null; }
     const space = this.folder && ideasSpace(this.folder);
     const onBoard = !!space && boardTab(space)?.active;
     if (!idea && onBoard) return v_flex().id("ideas-side").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.surface)

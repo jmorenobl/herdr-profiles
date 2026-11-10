@@ -1,6 +1,6 @@
 // What the buttons do: tabs with the agent (Claude by default), the board tab, projects as spaces.
 import { spaces, panes, run, exec, notify, shared, setShared, window } from "herdr";
-import { expand, tilde } from "./store.js";
+import { expand, tilde, cut } from "./store.js";
 
 export const SELECTED = "ideas.selected";
 export const select = (id) => setShared(SELECTED, id ?? null);
@@ -37,11 +37,32 @@ export function ideasSpace(folder) {
   return here ? s : null;
 }
 
-// A tab's name for an idea; also how we find that tab again.
-export const tabName = (idea) => idea.title.length > 28 ? `${idea.title.slice(0, 27)}…` : idea.title;
+// A tab's name for an idea (cut by characters, so an emoji isn't split in half).
+export const tabName = (idea) => (Array.from(idea.title).length > 28 ? `${cut(idea.title, 27)}…` : idea.title);
 
+// Terminal panes whose live folder is inside the idea's folder.
+const panesIn = (idea) => panes().filter((p) => p.terminal && inside(p.cwd, idea.dir));
+
+// The idea's tab in `space`: one with a terminal working in the idea's folder (the agent tab
+// Develop opened, wherever its title went), else a tab named after the idea (its agent moved
+// elsewhere): only a named one (an unnamed tab is called by its position, "2"), and not one
+// working in another idea (two titles can share their first 27 characters).
 export function tabFor(idea, space) {
-  return space?.tabs.find((t) => t.name === tabName(idea)) ?? null;
+  if (!space) return null;
+  const tabs = new Map(space.tabs.map((t) => [t.id, t]));
+  const byPane = panesIn(idea).map((p) => tabs.get(p.tab)).find(Boolean);
+  if (byPane) return byPane;
+  const root = idea.dir.split("/").slice(0, -2).join("/");   // the ideas folder
+  const elsewhere = new Set(panes().filter((p) => p.terminal && inside(p.cwd, root) && !inside(p.cwd, idea.dir)).map((p) => p.tab));
+  return space.tabs.find((t) => t.named && t.name === tabName(idea) && !elsewhere.has(t.id)) ?? null;
+}
+
+// A tab, in any space, with a terminal working in the idea's folder (its name for the notice), or null.
+export function workingIn(idea) {
+  const ids = new Set(panesIn(idea).map((p) => p.tab));
+  if (!ids.size) return null;
+  for (const s of spaces()) for (const t of s.tabs) if (ids.has(t.id)) return t;
+  return { name: "A terminal" };            // a pane in no listed tab
 }
 
 // The agent's name for buttons: "agentName" from profiles.json when set, else the command's
