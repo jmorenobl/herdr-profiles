@@ -6,5 +6,10 @@
   "layout": {
     "name": "standard",
     "source": "layouts/standard.json"
+  },
+  "keys": {
+    "global": {
+      "ctrl-`": "standard-tabs.terminal"
+    }
   }
 }

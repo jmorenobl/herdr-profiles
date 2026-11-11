@@ -14,6 +14,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 SCRIPT = REPO / "scripts" / "herdr_profiles.py"
 GOLDEN = REPO / "tests" / "golden"
+# The core's own key (the bottom terminal): added with standard, so it stays when a profile goes.
+STANDARD_KEY = {"ctrl-`": "standard-tabs.terminal"}
 
 
 class HomeCase(unittest.TestCase):
@@ -74,7 +76,7 @@ class InstallerTest(HomeCase):
 
     def test_install_matches_the_golden_snapshot(self):
         """What install writes. The layouts and keys.json are what install wrote on 2026-11-09,
-        before layouts were built from recipes; profiles.json too, except that the ideas folder
+        before layouts were built from recipes (keys.json plus the core's key, 2026-11-11); profiles.json too, except that the ideas folder
         became the asked one's default (~/ideas) on 2026-11-10. files.txt follows the repo's files."""
         self.assertEqual(self.run_cmd("install").returncode, 0)
         written = sorted(str(p.relative_to(self.home)) for kind in ("layouts", "mods", "themes")

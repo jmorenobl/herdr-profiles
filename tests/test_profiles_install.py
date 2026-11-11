@@ -15,7 +15,7 @@ import unittest
 from pathlib import Path
 
 import test_installer
-from test_installer import REPO, HomeCase
+from test_installer import REPO, STANDARD_KEY, HomeCase
 
 IDEAS_KEY = {"ctrl-shift-i": "mod.open:ideas"}
 IDEAS_RULE = {"path": "~/ideas", "profile": "ideas"}
@@ -103,7 +103,7 @@ class UninstallProfileTest(HomeCase):
         self.assertFalse((self.home / "layouts/ideas.json").exists())
         self.assertFalse((self.home / "themes/ideas.json").exists())
         self.assertTrue((self.home / "layouts/standard.json").is_file())
-        self.assertEqual(self.json("keys.json"), {"global": {"cmd-p": "mod.open:picker"}})
+        self.assertEqual(self.json("keys.json"), {"global": {"cmd-p": "mod.open:picker", **STANDARD_KEY}})  # the core's key stays
         config = self.json("profiles.json")
         self.assertEqual(config, {"default": "standard", "profiles": {"standard": {"layout": "standard"}},
                                   "rules": []})
@@ -143,7 +143,8 @@ class UninstallProfileTest(HomeCase):
         self.assertIn("kept      profiles.json entry 'ideas': changed since install", r.stdout)
         self.assertIn('kept      profiles.json rule {"path": "~/elsewhere", "profile": "ideas"}', r.stdout)
         self.assertEqual(self.json("keys.json")["global"],
-                         {"cmd-p": "mod.open:picker", "ctrl-shift-i": "app.help", "ctrl-shift-n": "mod.open:ideas"})
+                         {"cmd-p": "mod.open:picker", **STANDARD_KEY, "ctrl-shift-i": "app.help",
+                          "ctrl-shift-n": "mod.open:ideas"})
         after = self.json("profiles.json")
         self.assertEqual(after["profiles"]["ideas"], {"layout": "ideas", "folder": "~/elsewhere"})
         self.assertEqual(after["rules"], config["rules"])
@@ -197,8 +198,10 @@ class UninstallProfileTest(HomeCase):
     def test_a_keys_section_install_made_goes_when_empty(self):
         (self.home / "keys.json").write_text("{}")
         self.run_cmd("install")
-        self.assertEqual(self.json("keys.json"), {"global": IDEAS_KEY})
+        self.assertEqual(self.json("keys.json"), {"global": {**STANDARD_KEY, **IDEAS_KEY}})
         self.run_cmd("uninstall", "ideas")
+        self.assertEqual(self.json("keys.json"), {"global": STANDARD_KEY})  # the core's key keeps it
+        self.run_cmd("uninstall")
         self.assertEqual(self.json("keys.json"), {})
 
     def test_a_broken_personal_file_stops_uninstall_before_anything_goes(self):
@@ -237,7 +240,9 @@ class OldManifestTest(HomeCase):
             "keys": [{"section": "global", "key": "ctrl-shift-i", "action": "mod.open:ideas", "new_section": False}],
             "default": False})
         self.assertEqual(manifest["added"]["standard"],
-                         {"entry": {"layout": "standard"}, "rules": [], "keys": [], "default": True})
+                         {"entry": {"layout": "standard"}, "rules": [], "default": True, "keys": [
+                             {"section": "global", "key": "ctrl-`", "action": "standard-tabs.terminal",
+                              "new_section": False}]})
 
     def test_a_subset_install_keeps_its_profiles(self):
         self.make_old()
@@ -607,7 +612,7 @@ class RecogniseOldTest(HomeCase):
         self.assertEqual(added["ideas"]["entry"], {"layout": "ideas", "folder": "~/ideas"})
         r = self.run_cmd("uninstall", "ideas")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertEqual(self.json("keys.json"), {"global": {"cmd-p": "mod.open:picker"}})
+        self.assertEqual(self.json("keys.json"), {"global": {"cmd-p": "mod.open:picker", **STANDARD_KEY}})
         self.assertEqual(self.json("profiles.json"), {"default": "standard",
                                                       "profiles": {"standard": {"layout": "standard"}}, "rules": []})
         self.assertIn("matches the repo", self.run_cmd("status").stdout)
@@ -668,6 +673,7 @@ class RecogniseOldTest(HomeCase):
     def test_a_key_section_is_never_deleted(self):
         def alone(keys):
             del keys["global"]["cmd-p"]  # ctrl-shift-i alone in its section
+            del keys["global"]["ctrl-`"]
         self.make_old(edit_keys=alone)
         self.run_cmd("uninstall", "ideas")
         self.assertEqual(self.json("keys.json"), {"global": {}})
@@ -807,7 +813,7 @@ class LayoutKeysTest(HomeCase):
                                          env=self.env(), capture_output=True, text=True, stdin=subprocess.DEVNULL)
 
     def test_a_layout_key_goes_in_its_section_and_leaves_with_it(self):
-        before = self.json("keys.json")
+        before = {"global": {**self.json("keys.json")["global"], **STANDARD_KEY}}  # the core's key comes too
         run = self.repo_with({"layout:more": {"ctrl-shift-m": "app.help", "cmd-p": "app.palette"}})
         r = run("install", "more")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
@@ -820,7 +826,7 @@ class LayoutKeysTest(HomeCase):
         self.assertEqual(self.json("keys.json"), before)
 
     def test_no_empty_section_when_every_key_is_taken(self):
-        before = self.json("keys.json")
+        before = {"global": {**self.json("keys.json")["global"], **STANDARD_KEY}}  # the core's key comes too
         # A global key is added in the same install, so keys.json is written: no empty layout:more in it.
         run = self.repo_with({"global": {"ctrl-shift-n": "app.help"}, "layout:more": {"cmd-p": "app.palette"}})
         r = run("install", "more")

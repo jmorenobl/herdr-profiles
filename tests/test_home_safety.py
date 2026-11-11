@@ -14,7 +14,7 @@ import unittest
 from pathlib import Path
 
 import test_installer
-from test_installer import REPO, SCRIPT, HomeCase
+from test_installer import REPO, SCRIPT, STANDARD_KEY, HomeCase
 
 sys.path.insert(0, str(REPO / "scripts"))
 from profiletool import jsonedit  # noqa: E402
@@ -198,7 +198,8 @@ class KilledTest(HomeCase):
                 self.killed("/profiles.json", *args)
                 r = self.run_cmd("status")
                 self.assertIn("finished  keys.json", r.stdout)
-                self.assertEqual(self.json("keys.json"), {"global": {"cmd-p": "mod.open:picker"}})
+                core = STANDARD_KEY if args[1:] else {}  # uninstalling ideas leaves the core's key
+                self.assertEqual(self.json("keys.json"), {"global": {"cmd-p": "mod.open:picker", **core}})
                 self.run_cmd("uninstall")
                 self.assertEqual((self.home / "profiles.json").read_text(), '{"zz": 1}\n')
 
@@ -314,11 +315,12 @@ class FormattingTest(HomeCase):
                 if name in ("four spaces", "tabs", "crlf"):
                     unit = {"four spaces": "        ", "tabs": "\t\t", "crlf": "    "}[name]
                     self.assertIn(f'{unit}"ctrl-shift-i": "mod.open:ideas"', after)
-                    self.assertEqual(after.count("\n"), text.count("\n") + 1)  # one line more
+                    self.assertEqual(after.count("\n"), text.count("\n") + 2)  # two lines more: the core's key and ideas'
                 if name == "compact":
-                    self.assertIn('"cmd-p":"mod.open:picker","ctrl-shift-i":"mod.open:ideas"', after)
+                    self.assertIn('"cmd-p":"mod.open:picker","ctrl-`":"standard-tabs.terminal","ctrl-shift-i":"mod.open:ideas"', after)
                 if name == "one line":
-                    self.assertEqual(after, '{"global": {"cmd-p": "mod.open:picker", "ctrl-shift-i": "mod.open:ideas"}}')
+                    self.assertEqual(after, '{"global": {"cmd-p": "mod.open:picker", "ctrl-`": "standard-tabs.terminal",'
+                                            ' "ctrl-shift-i": "mod.open:ideas"}}')
                 if name == "unicode":
                     self.assertIn('"\\u00e9t\\u00e9"', after)  # their escapes stay as written
                 r = self.run_cmd("uninstall")

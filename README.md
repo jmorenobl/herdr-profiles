@@ -35,12 +35,10 @@ and diffs. Read-only: it never writes to your repo.
 A **Terminal** button in the tab bar shows a shell below the pane you're in,
 and hides it again without ending it: try a command while the agent's
 output stays in view, then put the shell away with its history. Each space
-has its own, started where you are. For a key, add one to `keys.json` in the
-Herdr home (`~/.config/herdr-app`):
-
-```json
-"global": { "ctrl-`": "standard-tabs.terminal" }
-```
+has its own, started where you are. ``ctrl-` `` does the same from the
+keyboard. (Installed before this? Install adds keys only the first time, so
+add `` "ctrl-`": "standard-tabs.terminal" `` under `"global"` in
+`~/.config/herdr-app/keys.json`.)
 
 <p align="center"><img src="docs/history.png" width="420" alt="The History panel: a repo's commits as a graph, with branch and tag chips"></p>
 

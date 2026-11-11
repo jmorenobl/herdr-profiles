@@ -396,8 +396,15 @@ def plan_removal(names: list[str], home: Home, manifest: dict, packages: list[Pa
     keys = load_keys(home)
     merge = Merge(home, config if config is not None else empty_config(), keys)
     by_name = {p.name: p for p in packages or []}
+    added = manifest.get("added", {})
+
+    def made(section: str) -> bool:
+        """Install made this keys.json section: whichever profile's key came first recorded it."""
+        return any(k.get("new_section") and k["section"] == section
+                   for record in added.values() if record for k in record.get("keys", []))
+
     for name in names:
-        record = manifest.get("added", {}).get(name)
+        record = added.get(name)
         if record is None:
             unknown_additions(name, by_name.get(name), config, keys, merge.lines)
             continue
@@ -420,7 +427,7 @@ def plan_removal(names: list[str], home: Home, manifest: dict, packages: list[Pa
                 merge.lines.append(f"  kept      key {k['key']}: now bound to {now!r}, not {k['action']!r} as install left it")
                 continue
             del section[k["key"]]
-            if not section and k.get("new_section"):
+            if not section and made(k["section"]):
                 del keys[k["section"]]
             merge.keys_changed = True
             merge.lines.append(f"  removed   key {k['key']} -> {k['action']}")

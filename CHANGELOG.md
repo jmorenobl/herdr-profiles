@@ -10,8 +10,14 @@
   focused pane's folder with `hc run` and found again by its
   `standard.terminal=<space id>` label; pressed in another tab, it moves
   there. A parked one whose space is closed is ended. A space on another
-  machine gets a plain split down. No key is installed: install adds a
-  profile's keys only the first time, and the core has none yet.
+  machine gets a plain split down. The core now has a key of its own,
+  ``ctrl-` `` in `global`, added on a first install like any profile's; a
+  home installed before keeps its `keys.json` as it is (README has the line
+  to add).
+- Installer: a full uninstall removes a `keys.json` section install made
+  once it's empty, whichever profile's key made it. It was left behind
+  empty when a later profile's key was the last one out, which the core
+  having a key now makes the usual case.
 - README: a banner on top, the profiles as a deck of cards (`standard`,
   `ideas`, and one face down for the next). It's a page,
   `docs/banner/banner.html`, that `make banner` renders to

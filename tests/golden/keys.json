@@ -1,6 +1,7 @@
 {
   "global": {
     "cmd-p": "mod.open:picker",
+    "ctrl-`": "standard-tabs.terminal",
     "ctrl-shift-i": "mod.open:ideas"
   }
 }
