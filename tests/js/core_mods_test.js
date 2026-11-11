@@ -1,10 +1,12 @@
 // Checks of the core mods' pure parts, run by tests/test_core_mods.py under node:
-// the Files panel's markdown image splitter and the profile switcher's config.
+// the Files panel's markdown image splitter, the profile switcher's config and the
+// tab bar's bottom terminal.
 // Prints one JSON object of results; the Python test asserts on it.
 // argv[2]: a throwaway folder with proj/sub/ and proj/.herdr-profile in it.
 import { state } from "./stubs.js";
 import { splitImages, linkTarget } from "./markdown.js";
 import { loadConfig, profileFor, FIND_UP } from "./profiles.js";
+import { LABEL, plan, orphans } from "./terminal.js";
 
 const out = { logs: [] };
 console.log = (...a) => out.logs.push(a.join(" ")); // the mods log; stdout is for the results
@@ -88,5 +90,21 @@ out.pick.has = await pick(base([{ has: "sub", profile: "ideas" }]));
 out.pick.hasMissing = await pick(base([{ has: "nothing-here", profile: "ideas" }]));
 out.pick.loaded = await pick(await cfg({ default: "standard", profiles: { standard: { layout: "standard" }, ideas: null }, rules: [null, { path: "~/proj", profile: "ideas" }] }));
 out.findUp = FIND_UP;
+
+// The bottom terminal: what the toggle does, and which parked shells nobody can show any more.
+const sp = { id: "sp1", tabs: [{ id: "tb1", active: false }, { id: "tb2", active: true }] };
+const shell = (address, space, more = {}) => ({ address, state: "live", labels: { [LABEL]: space }, ...more });
+const pane = (terminal, tab) => ({ pane: `p-${terminal}`, terminal, tab });
+out.terminal = {
+  none: plan(sp, [], []),
+  othersOnly: plan(sp, [shell("t1", "sp2"), { address: "t2", state: "live", labels: {} }, { address: "t3", state: "live" }], []),
+  finished: plan(sp, [shell("t1", "sp1", { state: "finished" })], []),
+  remote: plan(sp, [shell("box/t1", "sp1")], []),
+  parked: plan(sp, [shell("t1", "sp1")], [pane("t9", "tb2")]),
+  here: plan(sp, [shell("t1", "sp1")], [pane("t1", "tb2")]),
+  elsewhere: plan(sp, [shell("t1", "sp1")], [pane("t1", "tb1")]),
+  orphans: orphans([sp], [shell("t1", "sp1"), shell("t2", "gone"), shell("t3", "gone"), shell("t4", "gone", { state: "finished" }),
+    shell("box/t5", "gone"), { address: "t6", state: "live", labels: {} }], [pane("t3", "tb9")]),
+};
 
 process.stdout.write(JSON.stringify(out));

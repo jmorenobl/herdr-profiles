@@ -29,6 +29,8 @@ mods/standard-history/mod.json
 mods/standard-history/model.js
 mods/standard-tabs/main.js
 mods/standard-tabs/mod.json
+mods/standard-tabs/terminal.js
+mods/standard-tabs/terminal.svg
 mods/standard-tabs/win-close.svg
 mods/standard-tabs/win-max.svg
 mods/standard-tabs/win-min.svg

@@ -11,7 +11,8 @@ Version 2.0. These files were cloned from Herdr 0.1.14 and changed:
   the profile switcher to it.
 - core/mods/standard-files/: Herdr's `files` mod. Markdown files open
   rendered, with links and images.
-- core/mods/standard-tabs/: Herdr's `tabs` mod. A History button.
+- core/mods/standard-tabs/: Herdr's `tabs` mod. A History button and a
+  Terminal button (the bottom terminal).
 
 upstream/ keeps Herdr's own originals of those three, unchanged, from the
 version named in upstream/herdr.json, to compare a new Herdr against.

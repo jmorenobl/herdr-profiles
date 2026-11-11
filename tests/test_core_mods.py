@@ -3,7 +3,8 @@
 The Files panel's markdown image splitter (core/mods/standard-files/markdown.js)
 and the profile switcher's config reading and rule matching
 (core/mods/profiles/main.js), plus the switcher's FIND_UP shell script run with
-sh on a throwaway folder. Skipped when node isn't installed.
+sh on a throwaway folder, and the tab bar's bottom terminal
+(core/mods/standard-tabs/terminal.js). Skipped when node isn't installed.
 Run: python3 -m unittest discover -s tests
 """
 
@@ -42,6 +43,7 @@ class CoreModsTest(unittest.TestCase):
         text = re.sub(r'from "(herdr|gpui-kit|gpui-base)"', 'from "./stubs.js"', text)
         (code / "profiles.js").write_text(text)
         shutil.copy(CORE / "standard-files" / "markdown.js", code / "markdown.js")
+        shutil.copy(CORE / "standard-tabs" / "terminal.js", code / "terminal.js")
         shutil.copy(JS / "core_stubs.js", code / "stubs.js")
         shutil.copy(JS / "core_mods_test.js", code / "core_mods_test.js")
         (code / "package.json").write_text('{"type": "module"}\n')
@@ -53,6 +55,23 @@ class CoreModsTest(unittest.TestCase):
         if r.returncode != 0:
             raise AssertionError(r.stderr)
         cls.out = json.loads(r.stdout)
+
+    # The tab bar's bottom terminal.
+
+    def test_the_toggle_starts_a_shell_when_the_space_has_none(self):
+        t = self.out["terminal"]
+        for case in ("none", "othersOnly", "finished", "remote"):
+            with self.subTest(case):
+                self.assertEqual(t[case], {"step": "start"})
+
+    def test_the_toggle_shows_hides_or_moves_the_spaces_shell(self):
+        t = self.out["terminal"]
+        self.assertEqual(t["parked"], {"step": "show", "terminal": "t1"})
+        self.assertEqual(t["here"], {"step": "hide", "terminal": "t1"})
+        self.assertEqual(t["elsewhere"], {"step": "move", "terminal": "t1"})
+
+    def test_only_parked_shells_of_closed_spaces_are_orphans(self):
+        self.assertEqual(self.out["terminal"]["orphans"], ["t2"])
 
     # The Files panel's markdown images.
 

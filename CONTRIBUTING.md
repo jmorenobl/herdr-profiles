@@ -93,7 +93,7 @@ core/                      the mechanism; always installed
   mods/profiles/           the switcher
   mods/standard-files/     Herdr's Files panel, with a markdown preview
   mods/standard-history/   the History panel: commits and branches as a graph, read-only
-  mods/standard-tabs/      Herdr's tab bar, with a History button
+  mods/standard-tabs/      Herdr's tab bar, with a History button and the bottom terminal
 profiles/<name>/           one folder per profile
   profile.json             name, layout recipe, settings, questions, suggested rules and keys
   README.md, docs/         how to use it, with screenshots (not installed)

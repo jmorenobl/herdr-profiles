@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- `standard`: a bottom terminal, as in an editor. A **Terminal** button in
+  the tab bar (`standard-tabs.terminal` for a key; README has the line for
+  `keys.json`) shows a shell below the focused pane and hides it without
+  ending it: hidden is parked (`terminal.park`), so the shell and its
+  history come back (`terminal.keep`, down). One per space, started in the
+  focused pane's folder with `hc run` and found again by its
+  `standard.terminal=<space id>` label; pressed in another tab, it moves
+  there. A parked one whose space is closed is ended. A space on another
+  machine gets a plain split down. No key is installed: install adds a
+  profile's keys only the first time, and the core has none yet.
 - README: a banner on top, the profiles as a deck of cards (`standard`,
   `ideas`, and one face down for the next). It's a page,
   `docs/banner/banner.html`, that `make banner` renders to
