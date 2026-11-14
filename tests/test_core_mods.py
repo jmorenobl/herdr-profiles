@@ -1,6 +1,8 @@
 """The core mods' pure parts, run under node with stand-in Herdr modules.
 
 The Files panel's markdown image splitter (core/mods/standard-files/markdown.js)
+and its copy of an image on another machine (pictures.js, its shell scripts run
+with sh),
 and the profile switcher's config reading and rule matching
 (core/mods/profiles/main.js), plus the switcher's FIND_UP shell script run with
 sh on a throwaway folder, and the tab bar's bottom terminal
@@ -8,6 +10,7 @@ sh on a throwaway folder, and the tab bar's bottom terminal
 Run: python3 -m unittest discover -s tests
 """
 
+import base64
 import json
 import os
 import re
@@ -43,6 +46,7 @@ class CoreModsTest(unittest.TestCase):
         text = re.sub(r'from "(herdr|gpui-kit|gpui-base)"', 'from "./stubs.js"', text)
         (code / "profiles.js").write_text(text)
         shutil.copy(CORE / "standard-files" / "markdown.js", code / "markdown.js")
+        shutil.copy(CORE / "standard-files" / "pictures.js", code / "pictures.js")
         shutil.copy(CORE / "standard-tabs" / "terminal.js", code / "terminal.js")
         shutil.copy(JS / "core_stubs.js", code / "stubs.js")
         shutil.copy(JS / "core_mods_test.js", code / "core_mods_test.js")
@@ -50,6 +54,11 @@ class CoreModsTest(unittest.TestCase):
         work = cls.root / "work"
         (work / "proj" / "sub").mkdir(parents=True)
         (work / "proj" / ".herdr-profile").write_text("ideas\n")
+        (work / "img").mkdir()
+        cls.image = bytes(range(256)) * 1000 + os.urandom(44_000)  # 300,000 bytes: 4 pieces of base64
+        (work / "img" / "a.png").write_bytes(cls.image)
+        with open(work / "img" / "big.png", "wb") as f:
+            f.truncate(5_000_001)
         cls.work = work
         r = subprocess.run([NODE, str(code / "core_mods_test.js"), str(work)], capture_output=True, text=True, timeout=60)
         if r.returncode != 0:
@@ -60,7 +69,7 @@ class CoreModsTest(unittest.TestCase):
 
     def test_the_toggle_starts_a_shell_when_the_space_has_none(self):
         t = self.out["terminal"]
-        for case in ("none", "othersOnly", "finished", "remote"):
+        for case in ("none", "othersOnly", "finished", "remote"):  # remote: box/t1 is box's, not this space's
             with self.subTest(case):
                 self.assertEqual(t[case], {"step": "start"})
 
@@ -72,6 +81,50 @@ class CoreModsTest(unittest.TestCase):
 
     def test_only_parked_shells_of_closed_spaces_are_orphans(self):
         self.assertEqual(self.out["terminal"]["orphans"], ["t2"])
+
+    def test_the_shell_starts_labelled_in_the_folder(self):
+        label = ["run", "--bg", "--json", "--no-parent", "--label", "standard.terminal=sp1"]
+        self.assertEqual(self.out["terminal"]["startLocal"], [*label, "--cwd", "/work/repo"])
+        self.assertEqual(self.out["terminal"]["startNoFolder"], label)
+
+    def test_a_remote_space_gets_its_shell_on_its_machine(self):
+        r = self.out["remote"]
+        self.assertEqual(r["start"], ["run", "--bg", "--json", "--no-parent", "--label", "standard.terminal=sp1",
+                                      "--on", "box", "--cwd", "/home/me/repo"])
+        self.assertEqual(r["none"], {"step": "start"})  # shells here or on another machine aren't box's
+        self.assertEqual(r["parked"], {"step": "show", "terminal": "box/t1"})
+        self.assertEqual(r["qualified"], {"step": "show", "terminal": "box/t1"})
+        self.assertEqual(r["here"], {"step": "hide", "terminal": "box/t1"})
+        self.assertEqual(r["elsewhere"], {"step": "move", "terminal": "box/t1"})
+        self.assertEqual(r["localTwin"], {"step": "start"})
+
+    def test_remote_orphans_only_once_their_machine_is_known(self):
+        r = self.out["remote"]
+        self.assertEqual(r["orphansReady"], ["box/t2", "box/t3", "t4"])
+        self.assertEqual(r["orphansLoading"], ["t4"])
+
+    # The Files panel's images on another machine.
+
+    def test_a_remote_image_is_copied_into_the_cache_once(self):
+        p = self.out["pictures"]
+        first, again = p["first"], p["again"]
+        self.assertRegex(first.get("name", ""), r"^[0-9a-f]{8}\.png$", first)
+        self.assertEqual((self.work / "cache" / first["name"]).read_bytes(), self.image)
+        pieces = -(-len(base64.b64encode(self.image)) // p["piece"])
+        self.assertGreater(pieces, 1)
+        self.assertEqual([c["step"] for c in first["calls"]], ["read", "check", "read", *["add"] * pieces, "done"])
+        # Only the reads go to the other machine; the cache is this computer's.
+        self.assertEqual([c["on"] for c in first["calls"]], ["box", None, "box", *[None] * pieces, None])
+        self.assertEqual(again["name"], first["name"])
+        self.assertEqual([c["step"] for c in again["calls"]], ["read", "check"])
+        self.assertEqual(sorted(f.name for f in (self.work / "cache").iterdir()), [first["name"]])  # no part files left
+
+    def test_a_remote_image_too_big_or_gone_says_why(self):
+        p = self.out["pictures"]
+        self.assertEqual(p["max"], 5_000_000)
+        self.assertEqual(p["big"]["error"], "too big to copy here")
+        self.assertEqual(len(p["big"]["calls"]), 1)  # nothing read
+        self.assertEqual(p["gone"]["error"], "can't read it")
 
     # The Files panel's markdown images.
 

@@ -21,6 +21,7 @@ mods/standard-files/folder.svg
 mods/standard-files/main.js
 mods/standard-files/markdown.js
 mods/standard-files/mod.json
+mods/standard-files/pictures.js
 mods/standard-history/back.svg
 mods/standard-history/down.svg
 mods/standard-history/history.svg

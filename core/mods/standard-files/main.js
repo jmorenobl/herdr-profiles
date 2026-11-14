@@ -5,6 +5,7 @@ import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState, TextView } from "gpui-base";
 import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, appHome } from "herdr";
 import { splitImages, linkTarget } from "./markdown.js";
+import { fetchRemote } from "./pictures.js";
 
 function location() {
   const space = spaces().find(s => s.active), f = focused();
@@ -211,7 +212,8 @@ export default class Files extends View {
   }
 
   // An image the markdown shows. image() reads only inside the Herdr home, so
-  // the file (or download) is copied to .cache/standard-files there first.
+  // the file (or download) is copied to .cache/standard-files there first; a
+  // file on another machine comes over as base64 (pictures.js).
   // A linked image (a badge) opens its link when clicked.
   picture({ alt, src, link }, i, t) {
     const state = this.pictures?.get(src);
@@ -231,7 +233,6 @@ export default class Files extends View {
       const src = part.src, remote = /^https?:\/\//i.test(src);
       const target = remote ? null : linkTarget(src, root, file);
       if (!remote && !target) { pictures.set(src, { error: "not in this folder" }); continue; }
-      if (on && !remote) { pictures.set(src, { error: "on another machine" }); continue; }
       const ext = ((remote ? src.replace(/[?#].*$/, "") : target).match(/\.([a-z0-9]{2,5})$/i)?.[1] ?? "img").toLowerCase();
       pictures.set(src, { pending: true });
       queue.push({ src, remote, target, ext });
@@ -242,9 +243,15 @@ export default class Files extends View {
       for (let job; live() && (job = queue.shift());) {
         const { src, remote, target, ext } = job;
         let state;
+        const dir = `${appHome()}/.cache/standard-files`;
         try {
-          const r = await exec("sh", ["-c", CACHE, "files", remote ? src : `${root}/${target}`, `${appHome()}/.cache/standard-files`, ext, remote ? "url" : "file"], { timeout: 30000 });
-          state = r.code === 0 && r.stdout.trim() ? { path: `.cache/standard-files/${r.stdout.trim()}` } : { error: remote ? "can't download it" : "can't read it" };
+          if (on && !remote) {
+            const r = await fetchRemote(exec, { on, path: `${root}/${target}`, dir, ext });
+            state = r.name ? { path: `.cache/standard-files/${r.name}` } : { error: r.error };
+          } else {
+            const r = await exec("sh", ["-c", CACHE, "files", remote ? src : `${root}/${target}`, dir, ext, remote ? "url" : "file"], { timeout: 30000 });
+            state = r.code === 0 && r.stdout.trim() ? { path: `.cache/standard-files/${r.stdout.trim()}` } : { error: remote ? "can't download it" : "can't read it" };
+          }
         } catch { state = { error: "can't load it" }; }
         if (live() && pictures.get(src)?.pending) { pictures.set(src, state); cx.notify(); }
       }

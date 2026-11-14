@@ -35,8 +35,8 @@ and diffs. Read-only: it never writes to your repo.
 A **Terminal** button in the tab bar shows a shell below the pane you're in,
 and hides it again without ending it: try a command while the agent's
 output stays in view, then put the shell away with its history. Each space
-has its own, started where you are. ``ctrl-` `` does the same from the
-keyboard. (Installed before this? Install adds keys only the first time, so
+has its own, started where you are (on the space's machine, for a space
+on another one). ``ctrl-` `` does the same from the keyboard. (Installed before this? Install adds keys only the first time, so
 add `` "ctrl-`": "standard-tabs.terminal" `` under `"global"` in
 `~/.config/herdr-app/keys.json`.)
 
@@ -101,9 +101,36 @@ back to a profile's layout.
   `HERDR_APP_BIN` to it (`ARGS="--skip-version-check"` installs anyway).
 - Python 3.9 or newer (standard library only), `make` and `git`. The ideas
   profile uses `git` to commit your ideas folder (when it's a git repo).
-- **macOS only**, for now. The profiles haven't been tried in Herdr on
-  Linux, so it isn't supported yet (the ideas panel already uses
-  `xdg-open` there, and the tool's tests run on Ubuntu in CI).
+- **The Herdr app on macOS.** Its spaces can be on another machine
+  (Linux too): see [Spaces on another machine](#spaces-on-another-machine).
+  The app itself on Linux hasn't been tried, so that isn't supported yet
+  (the tool's tests run on Ubuntu in CI).
+
+## Spaces on another machine
+
+Herdr can keep spaces on another machine over SSH (`hc machine add`): the
+app runs here, the terminals, repos and agents there. Profiles work the
+same way:
+
+- **Install where the app is.** Install writes the app's home
+  (`~/.config/herdr-app` on the app's computer), so run `make` there. The
+  clone can be on the other machine, in a folder the app's computer
+  mounts (a file share): install and uninstall work from it, and `git pull`
+  goes on the machine that has it. The record of what install wrote names
+  the folder as the app's computer sees it; if the share comes back under
+  another name (`/Volumes/box-1`), install says another checkout installed
+  last, and `ARGS="--take-over"` makes it this one again.
+- **`standard` works on spaces there.** The switcher reads
+  `.herdr-profile` files and `has` on that machine; a rule's `path` there
+  is a full folder (`~` is this computer's home). Files lists and previews
+  that machine's folders, and copies a markdown file's images over to
+  show them (up to 5 MB each). History reads its repos. The bottom
+  terminal starts on that machine, and hides and comes back as here. Two
+  things are slower: Files and History see changes every 10 seconds (no
+  folder watch over SSH), and the first time an image is shown it's copied.
+- **`ideas` doesn't yet.** Its ideas folder is on the app's computer, and
+  its agent tabs start there. With everything on the other machine, install
+  only the core for now: `make install ARGS="standard"`.
 
 ## Which project gets which profile
 

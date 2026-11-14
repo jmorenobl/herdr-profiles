@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- `standard` on spaces on another machine (Herdr's SSH machines): the
+  bottom terminal starts on the space's machine (`hc run --on`), labelled
+  with the space's id as that machine knows it, and hides and comes back
+  like a local one (`terminal.park` / `terminal.keep`) instead of a plain
+  split down each time. A parked one whose space was closed is ended once
+  that machine's spaces are known. The shell is started with Herdr's own
+  `hc` (the `herdr` module's `hc()`), not the first `hc` on `PATH`.
+- `standard`, Files: a markdown file's images on another machine show
+  (they said "on another machine"): each comes over as base64 into the
+  Herdr home's cache, in pieces, once per version of the file
+  (`standard-files/pictures.js`), up to 5 MB.
+- README: "Spaces on another machine" (install where the app is, from a
+  clone on a file share; what works there; `ideas` not yet), and the
+  requirement is now the Herdr app on macOS, with spaces anywhere, rather
+  than "macOS only".
+
 - `standard`: a bottom terminal, as in an editor. A **Terminal** button in
   the tab bar (`standard-tabs.terminal` for a key; README has the line for
   `keys.json`) shows a shell below the focused pane and hides it without

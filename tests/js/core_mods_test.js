@@ -1,12 +1,14 @@
 // Checks of the core mods' pure parts, run by tests/test_core_mods.py under node:
-// the Files panel's markdown image splitter, the profile switcher's config and the
-// tab bar's bottom terminal.
+// the Files panel's markdown image splitter and its copy of images on another
+// machine, the profile switcher's config and the tab bar's bottom terminal.
 // Prints one JSON object of results; the Python test asserts on it.
-// argv[2]: a throwaway folder with proj/sub/ and proj/.herdr-profile in it.
-import { state } from "./stubs.js";
+// argv[2]: a throwaway folder with proj/sub/ and proj/.herdr-profile in it, and
+// img/ with a.png (several pieces of base64), big.png (too big) and gone.png absent.
+import { state, exec } from "./stubs.js";
 import { splitImages, linkTarget } from "./markdown.js";
+import { fetchRemote, PIECE, MAX_BYTES } from "./pictures.js";
 import { loadConfig, profileFor, FIND_UP } from "./profiles.js";
-import { LABEL, plan, orphans } from "./terminal.js";
+import { LABEL, plan, orphans, startArgs } from "./terminal.js";
 
 const out = { logs: [] };
 console.log = (...a) => out.logs.push(a.join(" ")); // the mods log; stdout is for the results
@@ -105,6 +107,32 @@ out.terminal = {
   elsewhere: plan(sp, [shell("t1", "sp1")], [pane("t1", "tb1")]),
   orphans: orphans([sp], [shell("t1", "sp1"), shell("t2", "gone"), shell("t3", "gone"), shell("t4", "gone", { state: "finished" }),
     shell("box/t5", "gone"), { address: "t6", state: "live", labels: {} }], [pane("t3", "tb9")]),
+  startLocal: startArgs(sp, "/work/repo"),
+  startNoFolder: startArgs(sp, ""),
 };
+
+// A space on another machine ("box"): the app names its ids box/…; its shell is box/t…,
+// labelled with the space's id as box knows it (or, should the app qualify it, box/…).
+const rsp = { id: "box/sp1", machine: "box", tabs: [{ id: "box/tb1", active: false }, { id: "box/tb2", active: true }] };
+out.remote = {
+  none: plan(rsp, [shell("t1", "sp1"), shell("t2", "box/sp1"), shell("other/t3", "sp1")], []),
+  parked: plan(rsp, [shell("box/t1", "sp1")], []),
+  qualified: plan(rsp, [shell("box/t1", "box/sp1")], []),
+  here: plan(rsp, [shell("box/t1", "sp1")], [pane("box/t1", "box/tb2")]),
+  elsewhere: plan(rsp, [shell("box/t1", "sp1")], [pane("box/t1", "box/tb1")]),
+  // A local space whose id happens to be "sp1" doesn't take box's shell, nor box's space a local one.
+  localTwin: plan(sp, [shell("box/t1", "sp1")], []),
+  start: startArgs(rsp, "/home/me/repo"),
+  orphansReady: orphans([sp, rsp], [shell("box/t1", "sp1"), shell("box/t2", "gone"), shell("box/t3", "box/gone"), shell("t4", "gone"),
+    shell("box/t5", "gone", { state: "finished" }), shell("box/t6", "gone"), shell("far/t7", "gone")], [pane("box/t6", "box/tb1")], [null, "box"]),
+  orphansLoading: orphans([sp], [shell("box/t2", "gone"), shell("t4", "gone")], [], [null]),
+};
+
+// An image on "box" (here: the stand-in exec runs everything in this computer's sh,
+// and records which calls asked for the other machine).
+const calls = [];
+const counted = (cmd, args, options = {}) => { calls.push({ on: options.on ?? null, step: args[5] ?? "read" }); return exec(cmd, args, options); };
+const fetch = async (name) => { calls.length = 0; const r = await fetchRemote(counted, { on: "box", path: `${root}/img/${name}`, dir: `${root}/cache`, ext: "png" }); return { ...r, calls: [...calls] }; };
+out.pictures = { piece: PIECE, max: MAX_BYTES, first: await fetch("a.png"), again: await fetch("a.png"), big: await fetch("big.png"), gone: await fetch("gone.png") };
 
 process.stdout.write(JSON.stringify(out));

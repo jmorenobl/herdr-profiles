@@ -4,8 +4,8 @@
 // space's bottom terminal (terminal.js).
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { spaces, panes, terminals, machines, focused, run, exec, nextCommand, notify, openOverlay, theme, window, shared, layout, settings } from "herdr";
-import { LABEL, plan, orphans } from "./terminal.js";
+import { spaces, panes, terminals, machines, focused, run, hc, nextCommand, notify, openOverlay, theme, window, shared, layout, settings } from "herdr";
+import { plan, orphans, startArgs } from "./terminal.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -63,12 +63,11 @@ export default class Tabs extends View {
   }
 
   // Shows the space's bottom terminal below the focused pane, or hides it. Hidden
-  // is parked: the shell and what's on it stay. A space on another machine gets a
-  // plain split: its terminals are that machine's, which this doesn't park.
+  // is parked: the shell and what's on it stay. A space on another machine gets
+  // its shell on that machine (terminal.js).
   toggleTerminal(cx) {
     const space = spaces().find(p => p.active);
     if (!space || memory.busy) return;
-    if (space.machine) { run("pane.split", { direction: "down" }); return; }
     const now = plan(space, terminals(), panes());
     if (now.step === "hide") { run("terminal.park", { terminal: now.terminal }); return; }
     if (now.step === "show") { run("terminal.keep", { terminal: now.terminal, place: "down" }); return; }
@@ -77,9 +76,8 @@ export default class Tabs extends View {
       try {
         let terminal = now.terminal;
         if (now.step === "start") {
-          const args = ["run", "--bg", "--json", "--no-parent", "--label", `${LABEL}=${space.id}`];
-          const cwd = focused()?.cwd || space.folder;
-          const r = await exec("hc", cwd ? [...args, "--cwd", cwd] : args);
+          // Herdr's own hc: not whichever one PATH finds, or none when the app wasn't started from a shell.
+          const r = await hc(startArgs(space, focused()?.cwd || space.folder));
           if (r.code !== 0) throw new Error(r.stderr.trim() || "hc run failed");
           terminal = JSON.parse(r.stdout).address;
           // The app hears of it a moment later, and can't place one it doesn't know yet.
@@ -135,15 +133,16 @@ export default class Tabs extends View {
     // History goes with Changes: both are about the repo.
     const enabled = chosen.includes("changes") ? [...chosen, "history"] : chosen;
     this.syncPanel(space, panel, body, enabled);
-    // Bottom terminals parked in a space that was closed. Only once this
-    // computer's spaces are known: before that, every space looks closed.
-    if (machines().some(m => m.name === null && m.layout === "ready") && spaces().length)
-      for (const terminal of orphans(spaces(), terminals(), panes())) {
+    // Bottom terminals parked in a space that was closed. Only on machines whose
+    // spaces are known: before that, every space there looks closed.
+    const ready = machines().filter(m => m.layout === "ready").map(m => m.name);
+    if (ready.length && spaces().length)
+      for (const terminal of orphans(spaces(), terminals(), panes(), ready)) {
         if (memory.ended.has(terminal)) continue;
         memory.ended.add(terminal);
         run("terminal.kill", { terminal });
       }
-    const terminalOn = Boolean(space) && !space.machine && plan(space, terminals(), panes()).step === "hide";
+    const terminalOn = Boolean(space) && plan(space, terminals(), panes()).step === "hide";
     const panelButton = (id, label, icon) => {
       const on = panel && !panel.hidden && body?.active === id;
       return h_flex().id(`panel-${id}`).h(26).px(8).gap(5).flex_none().items_center().rounded(6)
