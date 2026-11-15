@@ -3,7 +3,9 @@
 // so nothing like `open` can run.
 import { execFileSync } from "node:child_process";
 
-export const state = { profiles: null, home: "/home/u", appHome: "/home/u/.config/herdr-app", platform: "macos" };
+// spaces, panes and shared values a test sets; `runs`, when an array, collects run() calls.
+export const state = { profiles: null, home: "/home/u", appHome: "/home/u/.config/herdr-app", platform: "macos",
+  spaces: [], panes: [], shared: {}, runs: null };
 export const home = () => state.home;
 export const appHome = () => state.appHome;
 export const window = () => ({ platform: state.platform });
@@ -20,12 +22,15 @@ export async function exec(cmd, args) {
 }
 const fail = (name) => () => { throw new Error(`${name} is not available in tests`); };
 export const writeTextFile = fail("writeTextFile");
-export const run = fail("run");
+export const run = (command, args) => {
+  if (!Array.isArray(state.runs)) throw new Error("run is not available in tests");
+  state.runs.push([command, args]);
+};
 export const notify = fail("notify");
 export const knownAgents = async () => [];
-export const spaces = () => [];
-export const panes = () => [];
-export const shared = () => null;
+export const spaces = () => state.spaces;
+export const panes = () => state.panes;
+export const shared = (key) => state.shared[key] ?? null;
 export const setShared = fail("setShared");
 export const props = () => ({});
 export const closeOverlay = fail("closeOverlay");

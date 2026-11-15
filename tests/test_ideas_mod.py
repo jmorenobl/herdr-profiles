@@ -36,7 +36,7 @@ class IdeasModTest(unittest.TestCase):
         root = Path(tmp.name)
         code = root / "mod"
         code.mkdir()
-        for f in ("config.js", "store.js", "place.js", "ui.js", "actions.js", "capture.js", "board.js", "common.js"):
+        for f in ("config.js", "store.js", "place.js", "ui.js", "actions.js", "capture.js", "board.js", "common.js", "side.js"):
             text = (MOD / f).read_text()
             text = re.sub(r'from "herdr"', 'from "./herdr.js"', text)
             text = re.sub(r'from "gpui-(kit|base)"', 'from "./gpui.js"', text)
@@ -53,6 +53,16 @@ class IdeasModTest(unittest.TestCase):
         if r.returncode != 0:
             raise AssertionError(r.stderr)
         cls.out = json.loads(r.stdout)
+
+    def test_a_project_space_with_an_agent_in_the_ideas_folder_is_not_the_ideas_space(self):
+        # Shown before the switcher looked at it, and once it chose another profile: no Board tab.
+        for case in self.out["projectSpace"]:
+            self.assertEqual(case, {"space": None, "runs": []})
+
+    def test_the_ideas_space_gets_its_board(self):
+        self.assertEqual(self.out["ideasSpace"]["space"], "s2")
+        self.assertEqual(self.out["ideasSpace"]["runs"],
+                         [["tab.new", {"name": "Board", "mod": "ideas", "props": {"view": "board"}, "space": "s2"}]])
 
     def test_the_mod_and_the_installer_agree_on_folders(self):
         import sys

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `ideas`: the ideas space is the one the switcher chose the `ideas`
+  profile for, not any space with a pane in the ideas folder. A project's
+  space with an agent tab in an idea's folder no longer gets a Board tab
+  each time you go to it from the ideas space.
 - `ideas` with its folder on another machine (Herdr's SSH machines): a
   `machine` setting next to `folder` (one of `hc machine ls`; none is this
   computer, as before). Ideas are listed, read, written and committed there

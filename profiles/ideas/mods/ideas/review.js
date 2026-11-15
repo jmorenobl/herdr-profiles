@@ -17,7 +17,7 @@ export class Review {
   // From any copy: the board starts a review when the shared token changes.
   requestReview() {
     setShared(REVIEW, Date.now());
-    const space = this.role === "side" && this.folder && ideasSpace(this.folder);
+    const space = this.role === "side" && this.folder && ideasSpace();
     if (space) openBoard(space);
   }
 

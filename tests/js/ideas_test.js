@@ -3,11 +3,12 @@
 import { state } from "./herdr.js";
 import { ideasConfig, checkFolder } from "./config.js";
 import { typeLabel } from "./ui.js";
-import { agentName } from "./actions.js";
+import { agentName, ideasSpace } from "./actions.js";
 import { untypedIds, untypedFolders, untypedNotice, DEFAULT_TYPES } from "./store.js";
 import { captureFootnote } from "./capture.js";
 import { Board } from "./board.js";
 import { Common } from "./common.js";
+import { Side } from "./side.js";
 
 const out = {};
 const cfg = async (profiles) => { state.profiles = profiles; return ideasConfig(); };
@@ -60,4 +61,30 @@ out.dropOrder = view.order;
 out.dropSaves = spawned.length;
 const parity = JSON.parse(process.argv[3]);
 out.parity = parity.map((f) => [f, checkFolder(f).path ?? null]);
+
+// A project's space (standard profile: its first terminal is in the project) with another tab
+// running an agent in an idea's folder, shown after the ideas space: it isn't the ideas space,
+// and the side panel, still loaded with the ideas layout, adds no Board tab to it.
+const ideasRoot = "/home/u/notes/ideas";
+const project = { id: "s2", active: true, folder: "/home/u/code/proj", tabs: [{ id: "t1", name: "1" }, { id: "t2", name: "Claude" }] };
+state.spaces = [{ id: "s1", active: false, folder: ideasRoot, tabs: [{ id: "t0", name: "Board" }] }, project];
+state.panes = [{ pane: "p1", tab: "t1", terminal: true, cwd: "/home/u/code/proj" }, { pane: "p2", tab: "t2", terminal: true, cwd: `${ideasRoot}/other/x` }];
+const side = (shared) => {
+  state.shared = shared;
+  state.runs = [];
+  const v = Object.create(Side.prototype);
+  v.folder = ideasRoot;
+  v.ensureBoard();
+  return { space: ideasSpace()?.id ?? null, runs: state.runs };
+};
+out.projectSpace = [
+  side({ "profiles.space": "s1", "profiles.active": "ideas" }),     // the switcher hasn't looked at it yet
+  side({ "profiles.space": "s2", "profiles.active": "standard" }),  // it chose standard
+];
+// The ideas space itself, once the switcher chose ideas for it: it gets a Board tab.
+project.folder = ideasRoot;
+state.panes = [{ pane: "p1", tab: "t1", terminal: true, cwd: ideasRoot }];
+out.ideasSpace = side({ "profiles.space": "s2", "profiles.active": "ideas" });
+state.runs = null;
+
 console.log(JSON.stringify(out));

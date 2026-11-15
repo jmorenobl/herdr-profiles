@@ -54,7 +54,11 @@ with its notes and actions, and one key captures a new idea from any space.
 ## How it behaves
 
 - Going to the ideas space the first time adds the Board tab and moves it
-  first. The **Board** button in the list brings it back if closed.
+  first. The **Board** button in the list brings it back if closed. The
+  ideas space is the shown space when the switcher chose the `ideas`
+  profile for it (`profiles.space` is its id and `profiles.active` is
+  `ideas`): the same choice as the layout's, so a project's space with a tab
+  working in the ideas folder isn't one and gets no Board tab.
 - Drag a card to place it: before or after the card under the pointer (a
   3px accent line shows the spot), or last when dropped in a column's empty
   space. Across columns this also changes its status. The order goes to

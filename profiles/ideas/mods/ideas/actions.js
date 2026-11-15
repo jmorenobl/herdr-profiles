@@ -34,14 +34,14 @@ const inside = (path, root) => !!path && !!root && (path === root || path.starts
 // Spaces on the ideas folder's machine (ids from another machine have its name before a /).
 const placeSpaces = () => spaces().filter((s) => onPlace(s.id));
 
-// The space the ideas live in: the one showing now if it's on the ideas folder's machine and
-// works in the ideas folder.
-export function ideasSpace(folder) {
+// The space the ideas live in: the one showing now, if it's on the ideas folder's machine and
+// the profile switcher (core/mods/profiles) chose the ideas profile for it. The same choice
+// as the layout's, so a project's space with a tab working in the ideas folder isn't one, and
+// right after going to another space (before the switcher has looked at it) none is.
+export function ideasSpace() {
   const s = spaces().find((s) => s.active);
   if (!s || !onPlace(s.id)) return null;
-  const tabIds = new Set(s.tabs.map((t) => t.id));
-  const here = panes().some((p) => tabIds.has(p.tab) && inside(p.cwd, folder)) || inside(s.folder, folder);
-  return here ? s : null;
+  return shared("profiles.space") === s.id && shared("profiles.active") === "ideas" ? s : null;
 }
 
 // A tab's name for an idea (cut by characters, so an emoji isn't split in half).

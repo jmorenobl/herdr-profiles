@@ -80,6 +80,9 @@ const ideasSpaceFor = (folder, tabs = []) => {
   state.spaces = [{ id: "s1", index: 1, name: "ideas", named: false, folder, machine: null, active: true,
     tabs: [{ id: "t1", index: 1, name: "1", named: false, active: true }, ...tabs] }];
   state.panes = [{ pane: "p1", terminal: "a1", tab: "t1", cwd: folder }];
+  // The profile switcher chose the ideas profile for it.
+  state.shared.set("profiles.space", "s1");
+  state.shared.set("profiles.active", "ideas");
 };
 
 // ---------- autocommit ----------

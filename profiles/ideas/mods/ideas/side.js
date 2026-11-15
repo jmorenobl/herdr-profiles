@@ -157,7 +157,7 @@ export class Side {
 
   // The ideas space gets a Board tab once, the first time this panel sees it without one.
   ensureBoard() {
-    const space = this.folder && ideasSpace(this.folder);
+    const space = this.folder && ideasSpace();
     if (!space || this.boardChecked === space.id) return;
     this.boardChecked = space.id;
     if (!boardTab(space)) {
@@ -187,7 +187,7 @@ export class Side {
 
   list(t) {
     const shown = this.shown();
-    const space = this.folder && ideasSpace(this.folder);
+    const space = this.folder && ideasSpace();
     return v_flex().id("side-list").size_full().min_h(0)
       .child(v_flex().flex_none().px(12).pt(12).pb(10).gap(9).border_b(1).border_color(t.border)
         .child(h_flex().items_center().gap(8)
@@ -213,7 +213,7 @@ export class Side {
   }
 
   detail(t, idea) {
-    const space = this.folder && ideasSpace(this.folder);
+    const space = this.folder && ideasSpace();
     const revealText = revealLabel(idea, this.config.reveal);
     const agent = agentName(this.config.agent, this.config.agentName);
     const files = idea.files.filter((f) => /\.(md|txt)$/i.test(f));
@@ -284,7 +284,7 @@ export class Side {
     this.follow();
     const idea = this.ideas.find((i) => i.id === selected());
     if (this.file && this.fileFor !== idea?.id) { this.file = null; this.fileText = null; }
-    const space = this.folder && ideasSpace(this.folder);
+    const space = this.folder && ideasSpace();
     const onBoard = !!space && boardTab(space)?.active;
     if (!idea && onBoard) return v_flex().id("ideas-side").size_full().min_h(0).rounded(10).overflow_hidden().bg(t.surface)
       .border_1().border_color(t.border).text_color(t.foreground).text_size(13).child(this.overview(t));
