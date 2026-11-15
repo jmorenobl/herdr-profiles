@@ -67,15 +67,26 @@ export default class Ideas extends View {
       this.scheduleCommit(cx);
       for (;;) {
         // A folder on another machine can't be watched from here: it's read again every 10 seconds.
-        if (this.config.machine) await new Promise((r) => cx.timer.after(10000, r));
-        else {
-          try { await watchFolder(this.folder); }
-          catch { await new Promise((r) => cx.timer.after(5000, r)); }
+        if (this.config.machine) {
+          await new Promise((r) => cx.timer.after(10000, r));
+          const before = this.seen();
+          await this.reload(cx);
+          // Reading isn't a change: the quiet minute starts over only when something changed.
+          // With none waiting, one is scheduled anyway, for changes a read doesn't show (notes).
+          if (this.seen() !== before || !this.commitPending) this.scheduleCommit(cx);
+          continue;
         }
+        try { await watchFolder(this.folder); }
+        catch { await new Promise((r) => cx.timer.after(5000, r)); }
         await this.reload(cx);
         this.scheduleCommit(cx);
       }
     });
+  }
+
+  // What a read of the folder shows: the ideas' texts and files, and the board's file.
+  seen() {
+    return JSON.stringify([this.ideas.map((i) => [i.id, i.text, i.files]), this.orderText]);
   }
 
   // The side panel commits a pending change before it goes (close() has about 250 ms).

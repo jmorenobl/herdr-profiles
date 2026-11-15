@@ -40,13 +40,27 @@ function makeCx() {
     notify() {}, stop_propagation() {},
     focus_handle() { return { focus() {} }; },
     spawn(fn) { Promise.resolve().then(() => fn(cx)).catch((e) => cx.errors.push(e)); },
-    timer: { after(_ms, fn) { cx.timers.push(fn); } },
+    now: 0,                   // a clock for `advance`: each timer is due `ms` after it was set
+    timer: { after(ms, fn) { fn.ms = ms; fn.due = cx.now + ms; cx.timers.push(fn); } },
   };
   return cx;
 }
 // Every exec is synchronous underneath, so a few turns of the event loop finish all the work.
 const settle = async () => { for (let i = 0; i < 40; i++) await new Promise((r) => setImmediate(r)); };
 const fire = async (cx) => { for (const f of cx.timers.splice(0)) f(cx); await settle(); };
+// Lets `ms` pass: timers fire in the order they're due, each with its work finished before the next.
+const advance = async (cx, ms) => {
+  const end = cx.now + ms;
+  for (;;) {
+    const next = cx.timers.filter((f) => f.due <= end).sort((a, b) => a.due - b.due)[0];
+    if (!next) break;
+    cx.timers = cx.timers.filter((f) => f !== next);
+    cx.now = next.due;
+    next(cx);
+    await settle();
+  }
+  cx.now = end;
+};
 
 // A copy of the mod in a role: "side" (no props), "board" ({ view: "board" }).
 async function view(folder, role, settings = {}) {
@@ -662,6 +676,27 @@ test("autocommit runs git on the folder's machine", async () => {
   assert.equal(await autocommit(folder, await listIdeas(folder, T), T), "Add idea: Gamma");
   assert.equal(subject(folder), "Add idea: Gamma");
   thereOnly();
+});
+
+test("a remote folder is committed after a quiet minute, polls or not", async () => {
+  const { folder } = onBox("quiet");
+  fs.mkdirSync(folder, { recursive: true });
+  g(folder, "init", "-q", "-b", "main"); g(folder, "commit", "-q", "--allow-empty", "-m", "init");
+  const { v, cx } = await view(folder, "side", { machine: "box" });
+  await createIdea(folder, { title: "Delta", body: "d", type: "code" }, T);
+  // A poll every 10 seconds that finds nothing new doesn't push the commit back: a minute
+  // after the poll that saw Delta, it's committed.
+  await advance(cx, 75000);
+  assert.equal(subject(folder), "Add idea: Delta");
+  // An edit a read doesn't show (a note's text) is committed within the next minute or so.
+  write(`${folder}/code/delta/notes.md`, "n\n");
+  await advance(cx, 75000);
+  assert.equal(subject(folder), "Update: Delta");
+  fs.writeFileSync(`${folder}/code/delta/notes.md`, "more\n");
+  await advance(cx, 75000);
+  assert.equal(subject(folder), "Update: Delta");
+  assert.equal(commits(folder), 4);
+  void v;
 });
 
 test("an unreachable machine is said, and nothing is written", async () => {

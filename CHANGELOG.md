@@ -11,7 +11,9 @@
   home. Develop and Start project open the agent there (the ideas space,
   else one of that machine's spaces, else a new one; not when Herdr knows
   the agent isn't installed there), Open project looks there, the board
-  reads the folder again every 10 seconds, and an unreachable machine is
+  reads the folder again every 10 seconds (a read that finds nothing new
+  doesn't put the autocommit's quiet minute back; one is kept waiting for
+  edits a read doesn't show), and an unreachable machine is
   said and nothing is written. Show in Finder for those ideas needs
   `reveal` (`{ "<folder there>": "<folder here>" }`, a mount); without it
   the button isn't there. Terminals elsewhere with a folder of the same
