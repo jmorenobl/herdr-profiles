@@ -1,6 +1,9 @@
 // What the buttons do: tabs with the agent (Claude by default), the board tab, projects as spaces.
-import { spaces, panes, run, exec, notify, shared, setShared, window } from "herdr";
+// With the ideas folder on another machine (place.js), the agent, the projects and the spaces
+// for them are on that machine too.
+import { spaces, panes, run, exec, notify, shared, setShared, window, knownAgents } from "herdr";
 import { expand, tilde, cut } from "./store.js";
+import { machine, onPlace, run as runThere } from "./place.js";
 
 export const SELECTED = "ideas.selected";
 export const select = (id) => setShared(SELECTED, id ?? null);
@@ -28,10 +31,14 @@ export function followMoves(ids, since) {
 
 const inside = (path, root) => !!path && !!root && (path === root || path.startsWith(root.replace(/\/$/, "") + "/"));
 
-// The space the ideas live in: the one showing now if it works in the ideas folder.
+// Spaces on the ideas folder's machine (ids from another machine have its name before a /).
+const placeSpaces = () => spaces().filter((s) => onPlace(s.id));
+
+// The space the ideas live in: the one showing now if it's on the ideas folder's machine and
+// works in the ideas folder.
 export function ideasSpace(folder) {
   const s = spaces().find((s) => s.active);
-  if (!s) return null;
+  if (!s || !onPlace(s.id)) return null;
   const tabIds = new Set(s.tabs.map((t) => t.id));
   const here = panes().some((p) => tabIds.has(p.tab) && inside(p.cwd, folder)) || inside(s.folder, folder);
   return here ? s : null;
@@ -50,8 +57,8 @@ const inOtherIdea = (cwd, idea) => !inIdea(cwd, idea) && dirsOf(idea).some((d) =
   return inside(cwd, root) && cwd.slice(root.length + 1).split("/").filter(Boolean).length >= 2;
 });
 
-// Terminal panes whose live folder is inside the idea's folder.
-const panesIn = (idea) => panes().filter((p) => p.terminal && inIdea(p.cwd, idea));
+// Terminal panes on the ideas folder's machine whose live folder is inside the idea's folder.
+const panesIn = (idea) => panes().filter((p) => p.terminal && onPlace(p.pane) && inIdea(p.cwd, idea));
 
 // The idea's tab in `space`: one with a terminal working in the idea's folder (the agent tab
 // Develop opened, wherever its title went), else a tab named after the idea (its agent moved
@@ -62,7 +69,7 @@ export function tabFor(idea, space) {
   const tabs = new Map(space.tabs.map((t) => [t.id, t]));
   const byPane = panesIn(idea).map((p) => tabs.get(p.tab)).find(Boolean);
   if (byPane) return byPane;
-  const elsewhere = new Set(panes().filter((p) => p.terminal && inOtherIdea(p.cwd, idea)).map((p) => p.tab));
+  const elsewhere = new Set(panes().filter((p) => p.terminal && onPlace(p.pane) && inOtherIdea(p.cwd, idea)).map((p) => p.tab));
   return space.tabs.find((t) => t.named && t.name === tabName(idea) && !elsewhere.has(t.id)) ?? null;
 }
 
@@ -86,15 +93,36 @@ export function agentName(agent, name = null) {
   return cmd.charAt(0).toUpperCase() + cmd.slice(1);
 }
 
-// `agent` is the argv from profiles.json (["claude"] by default).
-function agentTab(idea, space, agent, task) {
+// Whether the agent can start on the ideas folder's machine: false only when Herdr's list of
+// agents knows the command and says it isn't installed there (then a notice says so).
+async function agentThere(agent) {
+  if (!machine()) return true;
+  const known = await knownAgents({ on: machine() }).catch(() => []);
+  const entry = known.find((a) => a.run?.[0] === agent[0]);
+  if (!entry || entry.installed) return true;
+  notify({ title: `${agentName(agent)} isn't installed on ${machine()}`, body: "Install it there, or set \"agent\" in profiles.json.", level: "warning", timeout: 6000 });
+  return false;
+}
+
+// `agent` is the argv from profiles.json (["claude"] by default). The tab goes in `space` (the
+// ideas space), else in the shown space when it's on the ideas folder's machine. With the folder
+// on another machine and no space of it shown, in one of that machine's spaces, else a new one.
+async function agentTab(idea, space, agent, task) {
   const existing = tabFor(idea, space);
   if (existing) return run("tab.select", { id: existing.id });
-  run("tab.new", { name: tabName(idea), folder: idea.dir, argv: agent, task, ...(space ? { space: space.id } : {}) });
+  if (!(await agentThere(agent))) return;
+  const tab = { name: tabName(idea), folder: idea.dir, argv: agent, task };
+  if (space || !machine()) return run("tab.new", { ...tab, ...(space ? { space: space.id } : {}) });
+  const shown = spaces().find((s) => s.active);
+  const there = shown && onPlace(shown.id) ? shown : placeSpaces()[0];
+  if (there) {
+    run("space.select", { id: there.id });
+    run("tab.new", { ...tab, space: there.id });
+  } else run("space.new", { machine: machine(), folder: idea.dir, argv: agent, task });
 }
 
 export function develop(idea, space, agent) {
-  agentTab(idea, space, agent,
+  return agentTab(idea, space, agent,
     "Read idea.md in this folder: it's one of my ideas (the format and rules are in the ideas folder's AGENTS.md). " +
     "Help me develop it: start with the questions that matter most. Keep notes in this folder (notes.md, research/). " +
     "Reply in the language the idea is written in.");
@@ -105,40 +133,56 @@ export function startProject(idea, space, agent, projectsRoot) {
   const where = projectsRoot
     ? `My projects folder is ${tilde(projectsRoot)}: the project goes in a new folder there. `
     : "I haven't said where my projects go: propose a location and ask me. ";
-  agentTab(idea, space, agent,
+  return agentTab(idea, space, agent,
     "Read idea.md in this folder: this idea is ripe and I want to turn it into a project. " + where +
     "Follow \"Starting a project\" in the ideas folder's AGENTS.md: propose the name and location first and wait for my OK. " +
     "Reply in the language the idea is written in.");
 }
 
-// Goes to the space working in the idea's project, or opens one there.
+// Goes to the space working in the idea's project, or opens one there: on the ideas folder's
+// machine, where its `project` folder is.
 export async function openProject(idea) {
   const path = expand(idea.project);
-  if ((await exec("test", ["-d", path])).code !== 0) {
-    notify({ title: "Project folder not found", body: tilde(path), level: "warning", timeout: 5000 });
+  const r = await runThere("test", ["-d", path]).catch(() => ({ code: -1 }));
+  if (r.code !== 0) {
+    notify({ title: "Project folder not found", body: machine() ? `${tilde(path)} on ${machine()}` : tilde(path), level: "warning", timeout: 5000 });
     return;
   }
-  const local = spaces().filter((s) => !s.machine);
+  const local = placeSpaces();
   const byPane = (s) => {
     const ids = new Set(s.tabs.map((t) => t.id));
     return panes().some((p) => ids.has(p.tab) && inside(p.cwd, path));
   };
   const found = local.find(byPane) ?? local.find((s) => inside(s.folder, path));
   if (found) run("space.select", { id: found.id });
-  else run("space.new", { folder: path });
+  else run("space.new", { folder: path, ...(machine() ? { machine: machine() } : {}) });
 }
 
 // Showing an idea's folder in the system's file manager, where we know how.
 const REVEAL = { macos: ["open", "Show in Finder"], linux: ["xdg-open", "Show in folder"] };
 const revealer = () => REVEAL[window()?.platform] ?? null;
-// The button's label, or null where there's no button (Windows).
-export const revealLabel = () => revealer()?.[1] ?? null;
 
-export async function reveal(idea) {
+// Where `dir` on the ideas folder's machine is on this computer: itself when the folder is here,
+// else through the longest "reveal" pair (config.js) it's inside; null when none is.
+export function localDir(dir, pairs = []) {
+  if (!machine()) return dir;
+  for (const [there, here] of pairs) {
+    if (dir === there) return here;
+    if (dir.startsWith(there.replace(/\/$/, "") + "/")) return here.replace(/\/$/, "") + dir.slice(there.replace(/\/$/, "").length);
+  }
+  return null;
+}
+
+// The button's label, or null where there's no button (Windows, or an idea on another machine
+// that "reveal" doesn't reach).
+export const revealLabel = (idea, pairs) => (idea && localDir(idea.dir, pairs) === null ? null : revealer()?.[1] ?? null);
+
+export async function reveal(idea, pairs) {
   const [cmd] = revealer() ?? [];
-  if (!cmd) return;
-  const r = await exec(cmd, [idea.dir]).catch((e) => ({ code: -1, stderr: String(e.message ?? e) }));
-  if (r.code !== 0) notify({ title: `Could not run ${cmd}`, body: r.stderr?.trim() || tilde(idea.dir), level: "warning", timeout: 5000 });
+  const dir = localDir(idea.dir, pairs);
+  if (!cmd || !dir) return;
+  const r = await exec(cmd, [dir]).catch((e) => ({ code: -1, stderr: String(e.message ?? e) }));
+  if (r.code !== 0) notify({ title: `Could not run ${cmd}`, body: r.stderr?.trim() || dir, level: "warning", timeout: 5000 });
 }
 
 // The Board tab: a tab whose only pane is this mod with { view: "board" }.

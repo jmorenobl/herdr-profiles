@@ -38,8 +38,25 @@ export async function loadConfig() {
   };
 }
 
-export const expand = (p, machine) =>
-  !machine && typeof p === "string" && (p === "~" || p.startsWith("~/")) ? home() + p.slice(1) : p;
+// `~` in a rule's path: this computer's home, or `machineHome` for a rule that names its
+// machine. A rule without one leaves `~` as it is for a space on another machine.
+export const expand = (p, machine, machineHome = null) => {
+  if (typeof p !== "string" || !(p === "~" || p.startsWith("~/"))) return p;
+  if (machineHome) return machineHome.replace(/\/+$/, "") + p.slice(1);
+  return machine ? p : home() + p.slice(1);
+};
+
+// Each machine's home, asked of it once per run (null: it couldn't say).
+const homes = new Map();
+async function homeOf(machine) {
+  if (!homes.has(machine)) {
+    const r = await exec("sh", ["-c", 'printf "%s" "$HOME"'], { on: machine, timeout: 5000 }).catch(() => null);
+    const h = r?.code === 0 && r.stdout.startsWith("/") ? r.stdout : null;
+    if (!h) return null; // asked again next time: it may be reachable then
+    homes.set(machine, h);
+  }
+  return homes.get(machine);
+}
 
 // Where a space works: its first terminal's live folder, else where its new terminals start.
 function spaceFolder(space) {
@@ -77,9 +94,12 @@ export async function profileFor(space, config) {
     if (!own(config.profiles, rule.profile)) continue; // not built yet: skip it
     const path = typeof rule.path === "string" && rule.path ? rule.path : null;
     const has = typeof rule.has === "string" && rule.has ? rule.has : null;
-    if ((rule.path != null && !path) || (rule.has != null && !has)) continue; // not a folder or a name
+    const machine = typeof rule.machine === "string" && rule.machine ? rule.machine : null;
+    if ((rule.path != null && !path) || (rule.has != null && !has) || (rule.machine != null && !machine)) continue; // not a folder or a name
     if (!path && !has) continue;
-    if (path && !inside(folder, expand(path, on))) continue;
+    // A rule naming a machine is only for spaces on it ("machine" in hc machine ls).
+    if (machine && machine !== on) continue;
+    if (path && !inside(folder, expand(path, on, machine && path.startsWith("~") ? await homeOf(machine) : null))) continue;
     if (has && !(await findUp(folder, has, on))) continue;
     return rule.profile;
   }

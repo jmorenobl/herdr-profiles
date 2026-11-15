@@ -176,6 +176,7 @@ class SpecTest(unittest.TestCase):
             ({"ask": [{**ok, "kind": "folder", "default": "notes"}]}, "starting with / or ~/"),
             ({"ask": [{**ok, "default": "a\nb"}]}, "control characters"),
             ({"ask": [ok], "rules": [{"path": "{folders}"}]}, r"uses \{folders\}"),
+            ({"ask": [{**ok, "setting": "machine", "kind": "machine", "default": "a b"}]}, "machine's name"),
         ]
         for n, (profile, message) in enumerate(cases):
             with self.subTest(message=message):
@@ -187,6 +188,14 @@ class SpecTest(unittest.TestCase):
                                  "ask": [{"setting": "folder", "question": " Where? ", "default": "~/x"}],
                                  "rules": [{"path": "{folder}/inbox"}]})
         self.assertEqual(pkg.ask, (spec.Ask("folder", "Where?", "~/x"),))
+
+    def test_a_machine_question_may_default_to_this_computer(self):
+        pkg = self.write_x(201, {"layout": {"name": "x", "source": "layouts/x.json"},
+                                 "ask": [{"setting": "machine", "question": "Where?", "default": "", "kind": "machine"}],
+                                 "rules": [{"path": "/srv/x", "machine": "{machine}"}]})
+        self.assertEqual(pkg.ask, (spec.Ask("machine", "Where?", "", "machine"),))
+        self.assertEqual(pkg.ask[0].check(" box.lan "), ("box.lan", None))
+        self.assertEqual(pkg.ask[0].check(""), ("", None))
 
     def write_x(self, n, profile):
         """A package named x in its own folder, with layouts/x.json."""

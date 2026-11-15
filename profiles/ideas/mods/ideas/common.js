@@ -24,7 +24,7 @@ export class Common {
       this.error = null;
       if (this.role === "side") await this.readShownFile();
     }
-    catch (e) { this.error = String(e); }
+    catch (e) { this.error = this.config.reach ?? String(e); }
     this.loaded = true;
     cx.notify();
   }

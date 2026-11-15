@@ -19,7 +19,7 @@ mods/ laid out like the Herdr home. Schema 2 (current):
     "ask": [{ "setting": "folder",        asked the first time the profile is added
               "question": "Where...?",    to profiles.json (Enter takes the default;
               "default": "~/ideas",       no terminal: the default, said in the output)
-              "kind": "folder" }],        optional: "text" (default) or "folder"
+              "kind": "folder" }],        optional: "text" (default), "folder" or "machine"
     "rules": [{ "path": "~/x" } | { "has": ".marker" }],
     "keys": { "<section>": { "<key>": "<action>" } }
   }
@@ -34,6 +34,12 @@ name, and a rule's string values can use it as `{setting}` (for example
 `{ "path": "{folder}" }`), so the suggested rule follows the answer. A
 placeholder must name an `ask` setting; an `ask` setting can't also be in
 `settings`.
+
+A "machine" answer names one of Herdr's machines (`hc machine ls`): letters,
+digits, ".", "_" and "-". It may be empty, which means this computer, and so
+may its default: then the setting isn't written into the entry, and a rule
+value that is only its placeholder (`"machine": "{machine}"`) is left out of
+the rule.
 
 Every answer is one line with no control characters. A "folder" answer
 starts with "/" or "~/", has no "." or ".." parts, and isn't "/", "~" or the
@@ -60,7 +66,8 @@ SCHEMA = 2
 NAME = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 TOP_KEYS = {"schema", "name", "description", "default", "layout", "settings", "ask", "rules", "keys"}
 ASK_KEYS = {"setting", "question", "default"}
-ASK_KINDS = ("text", "folder")
+ASK_KINDS = ("text", "folder", "machine")
+MACHINE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 # Where Python's strip() and JS's trim() disagree (\x1c-\x1f and \x85 are whitespace only to
 # Python, the BOM only to JS), plus the other C1 controls: refused anywhere, before stripping.
@@ -114,6 +121,10 @@ class Ask:
         if EXOTIC.search(value):
             return value.strip(), "it can't contain control characters (tabs, newlines, …)"
         value = value.strip()
+        if self.kind == "machine":
+            if not value or MACHINE.match(value):
+                return value, None
+            return value, "it must be a machine's name (`hc machine ls`): letters, digits, . _ and -, or empty for this computer"
         if not value:
             return value, "it can't be empty"
         if CONTROL.search(value):
@@ -278,7 +289,7 @@ def parse_ask(ask: Any, settings: dict[str, Any], fail) -> tuple[Ask, ...]:
             raise fail(f"'ask[{n}].setting' {setting!r} is asked twice")
         if not isinstance(question, str) or not question.strip():
             raise fail(f"'ask[{n}].question' must be a non-empty string")
-        if not isinstance(default, str) or not default.strip():
+        if not isinstance(default, str) or (not default.strip() and kind != "machine"):
             raise fail(f"'ask[{n}].default' must be a non-empty string")
         ask = Ask(setting, question.strip(), default.strip(), kind)
         default, problem = ask.check(default, Path("/nonexistent-home"))

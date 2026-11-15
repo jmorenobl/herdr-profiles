@@ -3,7 +3,8 @@
 // Methods of the Ideas view (main.js), copied onto it: `this` is the view.
 import { div } from "gpui-kit";
 import { v_flex, h_flex, TextView } from "gpui-base";
-import { spaces, run, notify, readTextFile } from "herdr";
+import { spaces, run, notify } from "herdr";
+import { read as readTextFile } from "./place.js";
 import { STATUSES, updateIdea, moveIdea, autocommit, writeBoard, ago, daysSince, tilde, touched, isStale } from "./store.js";
 import { STATUS_LABEL, statusColor, dot, chip, button, sectionLabel } from "./ui.js";
 import { select, selected, noteMove, ideasSpace, tabFor, workingIn, develop, startProject, agentName, openProject, reveal, revealLabel, boardTab, openBoard } from "./actions.js";
@@ -213,7 +214,7 @@ export class Side {
 
   detail(t, idea) {
     const space = this.folder && ideasSpace(this.folder);
-    const revealText = revealLabel();
+    const revealText = revealLabel(idea, this.config.reveal);
     const agent = agentName(this.config.agent, this.config.agentName);
     const files = idea.files.filter((f) => /\.(md|txt)$/i.test(f));
     const others = idea.files.length - files.length;
@@ -244,7 +245,7 @@ export class Side {
           .child(button(t, "d-develop", tabFor(idea, space) ? `Back to ${agent}` : `Develop with ${agent}`, true, () => develop(idea, space, this.config.agent)))
           .when(Boolean(idea.project), (el) => el.child(button(t, "d-project", "Open project", false, () => openProject(idea))))
           .when(!idea.project && idea.status === "ripe", (el) => el.child(button(t, "d-start", "Start project", false, () => startProject(idea, space, this.config.agent, this.config.projectsRoot))))
-          .when(Boolean(revealText), (el) => el.child(button(t, "d-reveal", revealText, false, () => reveal(idea)))))
+          .when(Boolean(revealText), (el) => el.child(button(t, "d-reveal", revealText, false, () => reveal(idea, this.config.reveal)))))
         .when(Boolean(idea.project), (el) => el.child(div().text_size(11.5).text_color(t.dim).truncate().child(`Project: ${tilde(idea.project)}`))))
       .when(files.length > 0 || others > 0, (el) => el.child(h_flex().flex_none().px(10).py(6).gap(4).flex_wrap().border_b(1).border_color(t.border)
         .child(fileTab("d-f-idea", "idea.md", null))

@@ -86,9 +86,9 @@ def parse_sets(sets: list[str], packages: list[Package]) -> dict[str, dict[str, 
     for item in sets:
         key, eq, value = item.partition("=")
         name, dot, setting = key.partition(".")
-        if not eq or not dot or not value.strip():
-            raise SpecError(f"--set {item!r}: write it as <profile>.<setting>=<value>")
         ask = asks.get((name, setting))
+        if not eq or not dot or (not value.strip() and not (ask and ask.kind == "machine")):
+            raise SpecError(f"--set {item!r}: write it as <profile>.<setting>=<value>")
         if ask is None:
             known = ", ".join(f"{p}.{s}" for p, s in sorted(asks)) or "none"
             raise SpecError(f"--set {item!r}: no profile asks for that (settings you can set: {known})")
@@ -107,10 +107,15 @@ def known_as(name: str, config: dict, manifest: dict) -> str | None:
 
 def ask_first_time(packages: list[Package], home: Home, manifest: dict,
                    preset: dict[str, dict[str, str]], prompt: Prompt,
-                   config: dict | None = None) -> dict[str, dict[str, str]]:
-    """The answers for profiles that are new to this home. Runs before install writes anything."""
+                   config: dict | None = None,
+                   machines: Callable[[], list[str]] | None = None) -> dict[str, dict[str, str]]:
+    """The answers for profiles that are new to this home. Runs before install writes anything.
+    A "machine" question is asked only on a terminal and only when herdr-core knows other
+    machines (`machines()`, herdr.machines by default); else its default (this computer) is
+    taken without a word."""
     config = load_config(home) if config is None else config
     answers: dict[str, dict[str, str]] = {}
+    listed: list[str] | None = None
     for pkg in packages:
         given = preset.get(pkg.name, {})
         known = known_as(pkg.name, config, manifest)
@@ -124,6 +129,15 @@ def ask_first_time(packages: list[Package], home: Home, manifest: dict,
                 if problem:
                     raise SpecError(f"--set {pkg.name}.{ask.setting}={given[ask.setting]}: {problem}")
                 answers.setdefault(pkg.name, {})[ask.setting] = value
+                continue
+            if ask.kind == "machine":
+                if prompt is not None and listed is None:
+                    from . import herdr
+                    listed = (machines or herdr.machines)()
+                if prompt is None or not listed:
+                    answers.setdefault(pkg.name, {})[ask.setting] = ask.default
+                    continue
+                answers.setdefault(pkg.name, {})[ask.setting] = ask_until_valid(pkg, ask, prompt, listed)
                 continue
             _, problem = ask.check(ask.default)
             if problem:  # checked in profile.json too, but against no real home
@@ -139,22 +153,47 @@ def ask_first_time(packages: list[Package], home: Home, manifest: dict,
     return answers
 
 
-def ask_until_valid(pkg: Package, ask, prompt: Callable[[str], str]) -> str:
+def ask_until_valid(pkg: Package, ask, prompt: Callable[[str], str], names: list[str] | None = None) -> str:
+    """Asks until the answer will do. `names`: for a machine, the ones herdr-core knows (shown,
+    and the answer must be one of them or empty)."""
+    question = f"{ask.question} ({', '.join(names)})" if names else ask.question
     while True:
         try:
-            typed = prompt(f"  {pkg.name}: {ask.question} [{ask.default}] ")
+            typed = prompt(f"  {pkg.name}: {question} [{shown_default(ask)}] ")
         except EOFError:
             print()
             return ask.default
         value, problem = ask.check(typed.strip() or ask.default)
+        if not problem and names and value and value not in names:
+            problem = f"herdr-core knows no machine called that (`hc machine ls`: {', '.join(names)})"
         if not problem:
             return value
-        print(f"  {value!r} won't do: {problem}. Try again (Enter takes {ask.default}).")
+        print(f"  {value!r} won't do: {problem}. Try again (Enter takes {shown_default(ask)}).")
+
+
+def shown_default(ask) -> str:
+    """The default as the question shows it: an empty machine is this computer."""
+    return ask.default or ("this computer" if ask.kind == "machine" else "")
+
+
+def stored(pkg: Package, values: dict[str, str]) -> dict[str, str]:
+    """The answers as the entry keeps them: an empty machine (this computer) isn't written."""
+    empty = {a.setting for a in pkg.ask if a.kind == "machine"}
+    return {k: v for k, v in values.items() if not (k in empty and v == "")}
 
 
 def fill(rule: dict, values: dict[str, str]) -> dict:
-    """A rule with its {setting} placeholders replaced by the answers."""
-    return {k: PLACEHOLDER.sub(lambda m: values[m.group(1)], v) if isinstance(v, str) else v for k, v in rule.items()}
+    """A rule with its {setting} placeholders replaced by the answers. A value that is only a
+    placeholder whose answer is empty (a machine left as this computer) leaves its key out."""
+    out = {}
+    for k, v in rule.items():
+        if isinstance(v, str):
+            whole = PLACEHOLDER.fullmatch(v)
+            if whole and values[whole.group(1)] == "":
+                continue
+            v = PLACEHOLDER.sub(lambda m: values[m.group(1)], v)
+        out[k] = v
+    return out
 
 
 TOP = ("default", "profiles", "rules")  # what install may add to profiles.json at the top
@@ -251,7 +290,7 @@ def plan_first_time(packages: list[Package], home: Home, manifest: dict,
         record = {"entry": None, "rules": [], "keys": [], "default": False}
         manifest.setdefault("added", {})[pkg.name] = record
         if added:
-            config["profiles"][pkg.name] = {"layout": pkg.layout.name, **pkg.settings, **answers.get(pkg.name, {})}
+            config["profiles"][pkg.name] = {"layout": pkg.layout.name, **pkg.settings, **stored(pkg, answers.get(pkg.name, {}))}
             record["entry"] = copy.deepcopy(config["profiles"][pkg.name])
         # Rules follow the profile's own value for each asked setting (the person's, if it was there).
         entry = config["profiles"][pkg.name]
@@ -362,9 +401,11 @@ def recognise(pkg: Package, config: dict, keys: dict | None) -> dict:
     if isinstance(entry, dict):
         for a in pkg.ask:
             own = entry.get(a.setting)
-            if isinstance(own, str) and a.check(own) == (own, None):
+            if own is None and a.kind == "machine":
+                values[a.setting] = ""  # not written: this computer
+            elif isinstance(own, str) and a.check(own) == (own, None):
                 values[a.setting] = own
-        shape = {"layout": pkg.layout.name, **pkg.settings, **values}
+        shape = {"layout": pkg.layout.name, **pkg.settings, **stored(pkg, values)}
         if entry == shape and len(values) == len(pkg.ask):
             record["entry"] = copy.deepcopy(entry)
     for rule in pkg.rules:

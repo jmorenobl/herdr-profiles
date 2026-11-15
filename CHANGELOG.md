@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- `ideas` with its folder on another machine (Herdr's SSH machines): a
+  `machine` setting next to `folder` (one of `hc machine ls`; none is this
+  computer, as before). Ideas are listed, read, written and committed there
+  (`mods/ideas/place.js`): `exec` and `readTextFile` with `{ on }`, and,
+  since `writeTextFile` has none, a write that still refuses a file changed
+  since it was read. `~` in `folder` and `projectsRoot` is that machine's
+  home. Develop and Start project open the agent there (the ideas space,
+  else one of that machine's spaces, else a new one; not when Herdr knows
+  the agent isn't installed there), Open project looks there, the board
+  reads the folder again every 10 seconds, and an unreachable machine is
+  said and nothing is written. Show in Finder for those ideas needs
+  `reveal` (`{ "<folder there>": "<folder here>" }`, a mount); without it
+  the button isn't there. Terminals elsewhere with a folder of the same
+  path no longer count as working in an idea.
+- Switcher: a rule can name a `machine`; it then matches only spaces on
+  that machine, and `~` in its `path` is that machine's home. Rules without
+  one work as before.
+- Installer: a question can be of kind `machine` (may be empty: this
+  computer, then not written, and a rule value that is only its
+  placeholder is left out). `ideas` asks it after the folder, only on a
+  terminal and only when `hc machine ls` lists machines (`HERDR_HC_BIN`
+  names hc); `--set ideas.machine=<name>` answers it. What install writes
+  for everyone else is unchanged.
+
 - `standard` on spaces on another machine (Herdr's SSH machines): the
   bottom terminal starts on the space's machine (`hc run --on`), labelled
   with the space's id as that machine knows it, and hides and comes back

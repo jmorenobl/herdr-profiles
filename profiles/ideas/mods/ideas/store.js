@@ -1,6 +1,7 @@
 // The ideas folder: <type>/<slug>/idea.md, plus whatever notes live beside it.
 // The format is described for agents in the folder's AGENTS.md (project/AGENTS.md here).
-import { exec, readTextFile, writeTextFile, home } from "herdr";
+// The folder may be on another machine: everything here runs there (place.js).
+import { run as exec, read as readTextFile, write as writeTextFile, homeDir, machine } from "./place.js";
 
 export const STATUSES = ["seed", "exploring", "ripe", "active", "parked", "dropped"];
 export const OPEN = ["seed", "exploring", "ripe", "active"];
@@ -11,8 +12,9 @@ export const DEFAULT_TYPES = ["book", "code", "legal", "other"];
 // Where an idea of no known type goes: "other" if it's a type, else the last one.
 export const fallbackType = (types) => (types.includes("other") ? "other" : types.at(-1));
 
-export const expand = (p) => (p === "~" || p?.startsWith("~/") ? home() + p.slice(1) : p);
-export const tilde = (p) => (p?.startsWith(home() + "/") ? "~" + p.slice(home().length) : p);
+// `~` is the home of the machine the ideas folder is on.
+export const expand = (p) => (p === "~" || p?.startsWith("~/") ? homeDir() + p.slice(1) : p);
+export const tilde = (p) => (p?.startsWith(homeDir() + "/") ? "~" + p.slice(homeDir().length) : p);
 
 export function parse(text) {
   const meta = {};
@@ -56,6 +58,20 @@ export function untypedNotice(folders) {
 // The folder with symlinks resolved (a terminal there may report either path), or null.
 const REAL = 'cd "$1" 2>/dev/null && pwd -P';
 
+// On another machine, the ideas' texts in one go (one connection, not one per idea): for each
+// file given (relative to the folder $1) that is there, its path, NUL, its text, NUL.
+export const READ_ALL = 'cd "$1" 2>/dev/null || exit 0; shift; for f in "$@"; do [ -f "$f" ] || continue; printf "%s\\0" "$f"; cat "$f"; printf "\\0"; done; true';
+
+async function readTexts(folder, entries) {
+  if (!machine()) {
+    return Promise.all(entries.map((e) => readTextFile(`${folder}/${e.id}/idea.md`).catch(() => null)));
+  }
+  const r = await exec("sh", ["-c", READ_ALL, "ideas", folder, ...entries.map((e) => `${e.id}/idea.md`)], { timeout: 30000 });
+  const parts = r.stdout.split("\0"), texts = new Map();
+  for (let i = 0; i + 1 < parts.length; i += 2) texts.set(parts[i], parts[i + 1]);
+  return entries.map((e) => texts.get(`${e.id}/idea.md`) ?? null);
+}
+
 export async function listIdeas(folder, types) {
   const [r, real] = await Promise.all([exec("sh", ["-c", LIST, "ideas", folder, ...types]),
     exec("sh", ["-c", REAL, "ideas", folder]).catch(() => null)]);
@@ -71,11 +87,9 @@ export async function listIdeas(folder, types) {
     byId.set(id, entry);
   }
   // Read in parallel: a reload follows every batch of changes the folder watch reports.
-  const read = await Promise.all([...byId.values()].filter((e) => e.hasIdea).map(async (e) => {
-    const dir = `${folder}/${e.id}`;
-    const path = `${dir}/idea.md`;
-    return { e, dir, path, text: await readTextFile(path).catch(() => null) };
-  }));
+  const withIdea = [...byId.values()].filter((e) => e.hasIdea);
+  const texts = await readTexts(folder, withIdea);
+  const read = withIdea.map((e, n) => ({ e, dir: `${folder}/${e.id}`, path: `${folder}/${e.id}/idea.md`, text: texts[n] }));
   const out = [];
   for (const { e, dir, path, text } of read) {
     if (text === null) continue;

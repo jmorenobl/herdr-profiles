@@ -42,7 +42,9 @@ class HomeCase(unittest.TestCase):
         return str(fake)
 
     def env(self, **extra):
-        return {**os.environ, "HERDR_APP_HOME": str(self.home), "HERDR_APP_BIN": self.herdr_app, **extra}
+        # No machines, whatever herdr-core this computer has: install asks the ideas machine only then.
+        return {**os.environ, "HERDR_APP_HOME": str(self.home), "HERDR_APP_BIN": self.herdr_app,
+                "HERDR_HC_BIN": "/nonexistent/hc", **extra}
 
     def run_cmd(self, *args, **extra_env):
         env = self.env(**extra_env)
@@ -304,6 +306,67 @@ class InstallerTest(HomeCase):
         self.assertEqual(entry["folder"], "~/notes/ideas")
         self.assertEqual(rules, [{"path": "~/notes/ideas", "profile": "ideas"}])
 
+    def test_the_ideas_machine_goes_into_the_entry_and_the_rule(self):
+        r = self.run_cmd("install", "--set", "ideas.folder=~/notes/ideas", "--set", "ideas.machine=box")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn("ideas.machine", r.stdout)
+        entry, rules = self.ideas_entry()
+        self.assertEqual(entry, {"layout": "ideas", "folder": "~/notes/ideas", "machine": "box"})
+        self.assertEqual(rules, [{"path": "~/notes/ideas", "machine": "box", "profile": "ideas"}])
+        # Uninstall takes back the entry and the rule, machine and all.
+        r = self.run_cmd("uninstall", "ideas")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        config = json.loads((self.home / "profiles.json").read_text())
+        self.assertNotIn("ideas", config["profiles"])
+        self.assertEqual(config["rules"], [])
+
+    def test_no_machine_is_this_computer_and_isnt_written(self):
+        for given in ((), ("--set", "ideas.machine=")):
+            with self.subTest(given=given):
+                for p in ("profiles.json", ".herdr-profiles.json"):
+                    (self.home / p).unlink(missing_ok=True)
+                r = self.run_cmd("install", "--force", *given)
+                self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertNotIn("ideas.machine", r.stdout)  # nothing said about it
+                entry, rules = self.ideas_entry()
+                self.assertNotIn("machine", entry)
+                self.assertEqual(rules, [{"path": "~/ideas", "profile": "ideas"}])
+
+    def test_a_bad_machine_name_stops_before_writing(self):
+        for bad in ("a b", "-x", "box/1", "ñ"):
+            r = self.run_cmd("install", "--set", f"ideas.machine={bad}")
+            self.assertEqual(r.returncode, 1, bad)
+            self.assertIn("machine's name", r.stderr, bad)
+            self.assertFalse((self.home / "layouts").exists(), bad)
+
+    def fake_hc(self, *names):
+        """An hc whose `machine ls --json` lists these machines."""
+        hc = Path(self.tmp.name + "-bin") / "hc"  # beside the fake herdr-app
+        listing = json.dumps({"machines": [{"name": n} for n in names]})
+        hc.write_text(f"#!/bin/sh\n[ \"$1 $2\" = 'machine ls' ] || exit 2\nprintf '%s\\n' '{listing}'\n")
+        hc.chmod(0o755)
+        return str(hc)
+
+    def test_on_a_terminal_the_machine_is_asked_only_when_there_are_machines(self):
+        cases = (((), "\n", None, False),                       # no machines: not asked
+                 (("box", "vps"), "\n\n", None, True),          # Enter: this computer
+                 (("box", "vps"), "\nnope\nbox\n", "box", True))  # one it doesn't know is asked again
+        for names, typed, machine, asked in cases:
+            with self.subTest(names=names, typed=typed):
+                for p in ("profiles.json", ".herdr-profiles.json"):
+                    (self.home / p).unlink(missing_ok=True)
+                hc = self.fake_hc(*names) if names else "/nonexistent/hc"
+                code, out = self.run_on_a_terminal(typed, "--force", hc=hc)
+                self.assertEqual(code, 0, out)
+                self.assertEqual("Which machine is that folder on?" in out, asked, out)
+                if asked:
+                    self.assertIn("(box, vps) [this computer]", out)
+                entry, rules = self.ideas_entry()
+                self.assertEqual(entry.get("machine"), machine)
+                self.assertEqual(rules, [{"path": "~/ideas", **({"machine": machine} if machine else {}), "profile": "ideas"}])
+                if machine:
+                    self.assertIn("knows no machine called that", out)
+
     def test_a_bad_set_stops_before_writing(self):
         for bad in ("ideas.colour=red", "nope.folder=~/x", "ideas.folder=", "ideas=~/x"):
             r = self.run_cmd("install", "--set", bad)
@@ -443,7 +506,8 @@ class InstallerTest(HomeCase):
                 return self.tty
 
         out, err = Fake(stdout_tty), io.StringIO()
-        with mock.patch.dict(os.environ, {"HERDR_APP_HOME": str(self.home), "HERDR_APP_BIN": self.herdr_app}), \
+        with mock.patch.dict(os.environ, {"HERDR_APP_HOME": str(self.home), "HERDR_APP_BIN": self.herdr_app,
+                                          "HERDR_HC_BIN": "/nonexistent/hc"}), \
                 mock.patch.object(sys, "stdin", Fake(stdin_tty)), \
                 mock.patch.object(builtins, "input", answer), \
                 contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
@@ -472,12 +536,13 @@ class InstallerTest(HomeCase):
         self.assertEqual(code, 0)
         self.assertIn("no terminal to ask", out)
 
-    def run_on_a_terminal(self, typed, *args):
-        """install with stdin and stdout on a pty (a terminal); returns (exit code, what it printed)."""
+    def run_on_a_terminal(self, typed, *args, hc=None):
+        """install with stdin and stdout on a pty (a terminal); returns (exit code, what it printed).
+        `hc`: the herdr-core it asks for machines (default: none)."""
         import pty
         import select
         main, child = pty.openpty()
-        env = self.env()
+        env = self.env(**({"HERDR_HC_BIN": hc} if hc else {}))
         proc = subprocess.Popen([sys.executable, str(SCRIPT), "install", *args], env=env,
                                 stdin=child, stdout=child, stderr=child)  # input() prompts on stderr there
         os.close(child)

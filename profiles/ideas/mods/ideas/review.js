@@ -2,7 +2,8 @@
 // Methods of the Ideas view (main.js), copied onto it: `this` is the view.
 import { div } from "gpui-kit";
 import { v_flex, h_flex, Input, TextView } from "gpui-base";
-import { notify, setShared, readTextFile } from "herdr";
+import { notify, setShared } from "herdr";
+import { read as readTextFile } from "./place.js";
 import { updateIdea, readBoard, writeBoard, parse, ago, today, touched, isStale } from "./store.js";
 import { STATUS_LABEL, statusColor, dot, button } from "./ui.js";
 import { ideasSpace, openBoard, lastMove, followMoves } from "./actions.js";

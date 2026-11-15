@@ -11,7 +11,8 @@ import {
   autocommit, createIdea, slugify, moveIdea, updateIdea, listIdeas, readBoard, writeBoard,
   daysSince, ago, today, parse,
 } from "./store.js";
-import { tabFor, tabName, workingIn, select, selected } from "./actions.js";
+import { tabFor, tabName, workingIn, select, selected, develop, openProject, revealLabel, localDir } from "./actions.js";
+import { setPlace, write as placeWrite } from "./place.js";
 import { REVIEW, freshRequest } from "./common.js";
 import Ideas from "./main.js";
 import { drawn } from "./gpui.js";
@@ -594,9 +595,173 @@ test("capture says where it saves, in amber, when profiles.json gives no folder"
   assert.deepEqual((await captureFoot(null)).after, { text: "Saves into ~/ideas", color: "ansi3" });
 });
 
+// ---------- the ideas folder on another machine ----------
+
+// A machine "box" whose home is a throwaway folder (the stand-in runs its commands here, with
+// that HOME), and the ideas folder in it.
+const onBox = (name) => {
+  const home = fresh(`box-${name}`);
+  state.machines = { box: home };
+  return { home, folder: `${home}/ideas` };
+};
+const thereOnly = () => {
+  const here = state.calls.filter((c) => c.on === null && c.what !== "read");
+  assert.deepEqual(here, [], "nothing ran on this computer");
+};
+
+test("a folder on another machine is read and written there", async () => {
+  const { home, folder } = onBox("rw");
+  write(`${folder}/code/a/idea.md`, idea("Alpha"));
+  state.calls = []; state.writes = [];
+  const { v } = await view("~/ideas", "side", { machine: "box" });
+  assert.equal(v.folder, folder, "~ is box's home");
+  assert.deepEqual(v.ideas.map((i) => i.title), ["Alpha"]);
+  assert.equal(v.error, null);
+  // Created, changed and moved there, never with this computer's writeTextFile.
+  const id = await createIdea(folder, { title: "Beta", body: "b", type: "book" }, T);
+  assert.equal(id, "book/beta");
+  assert.match(read(`${folder}/book/beta/idea.md`), /title: Beta\nstatus: seed/);
+  const alpha = (await listIdeas(folder, T)).find((i) => i.id === "code/a");
+  await updateIdea(alpha, { status: "ripe" });
+  assert.match(read(`${folder}/code/a/idea.md`), /status: ripe/);
+  await assert.rejects(updateIdea(alpha, { status: "parked" }), /changed since it was read/, "a stale text is refused there too");
+  assert.equal(await moveIdea(folder, (await listIdeas(folder, T)).find((i) => i.id === "code/a"), "legal", T), "legal/a");
+  await writeBoard(folder, { order: { seed: ["book/beta"] } }, null);
+  await assert.rejects(writeBoard(folder, { order: {} }, null), /changed since it was read/, "a new board file mustn't exist yet");
+  assert.deepEqual(state.writes, [], "this computer's writeTextFile wrote nothing");
+  thereOnly();
+  assert.ok(state.calls.some((c) => c.on === "box"));
+  // Reads of the ideas go in one call, not one per idea.
+  state.calls = [];
+  await listIdeas(folder, T);
+  assert.deepEqual(state.calls.map((c) => [c.on, c.what]), [["box", "sh"], ["box", "sh"], ["box", "sh"]]);
+  void home;
+});
+
+test("a remote write keeps the text exactly, trailing newlines and all", async () => {
+  const { folder } = onBox("exact");
+  setPlace("box", state.machines.box);
+  fs.mkdirSync(folder, { recursive: true });
+  const text = "---\ntitle: ñ “quotes” $HOME `x` \\ \n---\n\n\n";
+  await placeWrite(`${folder}/f.md`, text, null);
+  assert.equal(read(`${folder}/f.md`), text);
+  await placeWrite(`${folder}/f.md`, "two\n", text);
+  assert.equal(read(`${folder}/f.md`), "two\n");
+  await assert.rejects(placeWrite(`${folder}/f.md`, "x", "two"), /changed since it was read/, "without its last newline it isn't the same");
+  await assert.rejects(placeWrite(`${folder}/f.md`, "x".repeat(130000), "two\n"), /Too large/);
+  assert.deepEqual(fs.readdirSync(folder), ["f.md"], "no temporary file left");
+});
+
+test("autocommit runs git on the folder's machine", async () => {
+  const { folder } = onBox("git");
+  fs.mkdirSync(folder, { recursive: true });
+  g(folder, "init", "-q", "-b", "main"); g(folder, "commit", "-q", "--allow-empty", "-m", "init");
+  setPlace("box", state.machines.box);
+  await createIdea(folder, { title: "Gamma", body: "g", type: "code" }, T);
+  state.calls = [];
+  assert.equal(await autocommit(folder, await listIdeas(folder, T), T), "Add idea: Gamma");
+  assert.equal(subject(folder), "Add idea: Gamma");
+  thereOnly();
+});
+
+test("an unreachable machine is said, and nothing is written", async () => {
+  onBox("down");
+  state.unreachable = new Set(["box"]);
+  state.writes = [];
+  const { v } = await view("~/ideas", "side", { machine: "box" });
+  assert.match(v.error, /Can't reach "box", where the ideas folder is/);
+  assert.ok(noteTitles().includes("Ideas: check profiles.json"), "the side panel says so");
+  assert.deepEqual(v.ideas, []);
+  assert.deepEqual(state.writes, []);
+});
+
+test("a bad machine name is a warning, and the folder is looked for here", async () => {
+  const { v } = await view(fresh("here"), "side", { machine: "no spaces" });
+  assert.equal(v.config.machine, null);
+  assert.ok(v.config.warnings.some((w) => /"machine" must be a machine's name/.test(w)));
+});
+
+test("Develop opens the agent on the folder's machine", async () => {
+  const { folder } = onBox("dev");
+  write(`${folder}/code/a/idea.md`, idea("Alpha"));
+  const { v } = await view(folder, "side", { machine: "box" });
+  const [a] = v.ideas;
+  // Only this computer's space is shown: a new space on box, in the idea's folder.
+  state.spaces = [{ id: "s1", index: 1, name: "here", folder: "/x", machine: null, active: true, tabs: [] }];
+  state.runs = [];
+  await develop(a, null, ["claude"]);
+  assert.deepEqual(state.runs.map(([n]) => n), ["space.new"]);
+  assert.equal(state.runs[0][1].machine, "box");
+  assert.equal(state.runs[0][1].folder, a.dir);
+  assert.deepEqual(state.runs[0][1].argv, ["claude"]);
+  // A space of box's exists: the tab goes there.
+  state.spaces.push({ id: "box/s2", index: 2, name: "api", folder: "/srv", machine: "box", active: false, tabs: [] });
+  state.runs = [];
+  await develop(a, null, ["claude"]);
+  assert.deepEqual(state.runs.map(([n, x]) => [n, x.id ?? x.space]), [["space.select", "box/s2"], ["tab.new", "box/s2"]]);
+  // The agent isn't installed there: said, and nothing opens.
+  state.agents = [{ key: "claude", run: ["claude"], installed: false }];
+  state.runs = [];
+  await develop(a, null, ["claude"]);
+  assert.deepEqual(state.runs, []);
+  assert.ok(noteTitles().includes("Claude isn't installed on box"));
+  assert.ok(state.calls.some((c) => c.what === "knownAgents" && c.on === "box"));
+});
+
+test("a terminal on another machine isn't working in a local idea of the same path", async () => {
+  const F = fresh("twin");
+  write(`${F}/code/a/idea.md`, idea("Alpha"));
+  const { v } = await view(F, "side");
+  const [a] = v.ideas;
+  state.spaces = [{ id: "box/s1", index: 1, name: "x", folder: F, machine: "box", active: true,
+    tabs: [{ id: "box/t1", index: 1, name: "Alpha", named: true, active: true }] }];
+  state.panes = [{ pane: "box/p1", terminal: "box/a1", tab: "box/t1", cwd: a.dir }];
+  assert.equal(workingIn(a), null);
+});
+
+test("Open project looks on the folder's machine", async () => {
+  const { home, folder } = onBox("proj");
+  fs.mkdirSync(`${home}/code/api`, { recursive: true });
+  write(`${folder}/code/a/idea.md`, idea("Alpha", "project: ~/code/api\n"));
+  const { v } = await view(folder, "side", { machine: "box" });
+  const [a] = v.ideas;
+  state.spaces = [{ id: "s1", index: 1, name: "api", folder: `${home}/code/api`, machine: null, active: true, tabs: [] }];
+  state.runs = [];
+  await openProject(a);
+  assert.deepEqual(state.runs, [["space.new", { folder: `${home}/code/api`, machine: "box" }]], "this computer's space of the same path isn't it");
+  state.spaces.push({ id: "box/s2", index: 2, name: "api", folder: `${home}/code/api`, machine: "box", active: false, tabs: [] });
+  state.runs = [];
+  await openProject(a);
+  assert.deepEqual(state.runs, [["space.select", { id: "box/s2" }]]);
+  write(`${folder}/code/b/idea.md`, idea("Beta", "project: ~/code/gone\n"));
+  await v.reload(makeCx());
+  state.runs = [];
+  await openProject(v.ideas.find((i) => i.id === "code/b"));
+  assert.deepEqual(state.runs, []);
+  assert.ok(state.notes.some((x) => x.title === "Project folder not found" && / on box$/.test(x.body)));
+});
+
+test("Show in Finder reaches a remote idea only through reveal", async () => {
+  const { home, folder } = onBox("reveal");
+  write(`${folder}/code/a/idea.md`, idea("Alpha"));
+  const { v } = await view(folder, "side", { machine: "box" });
+  const [a] = v.ideas;
+  assert.equal(revealLabel(a, v.config.reveal), null, "no reveal: no button");
+  const r = await view(folder, "side", { machine: "box", reveal: { [home]: "/Volumes/box", [`${home}/ideas`]: "~/mnt/ideas" } });
+  assert.equal(revealLabel(a, r.v.config.reveal), "Show in Finder");
+  assert.equal(localDir(a.dir, r.v.config.reveal), "/home/u/mnt/ideas/code/a", "the longest pair wins; ~ is this computer's");
+  assert.equal(localDir(`${home}/other`, r.v.config.reveal), "/Volumes/box/other");
+  assert.equal(localDir(`${home}x/y`, r.v.config.reveal), null, "a folder beside it isn't inside it");
+  const bad = await view(folder, "side", { machine: "box", reveal: { relative: "/x" } });
+  assert.deepEqual(bad.v.config.reveal, []);
+  assert.ok(bad.v.config.warnings.some((w) => /"reveal" must map folders/.test(w)));
+});
+
 const out = {};
 for (const [name, fn] of Object.entries(cases)) {
-  Object.assign(state, { notes: [], runs: [], shared: new Map(), spaces: [], panes: [], failWrite: null, beforeWrite: null, failExec: null, props: {}, edited: false });
+  Object.assign(state, { notes: [], runs: [], shared: new Map(), spaces: [], panes: [], failWrite: null, beforeWrite: null, failExec: null, props: {}, edited: false,
+    machines: {}, unreachable: new Set(), calls: [], writes: [], agents: [] });
+  setPlace(null, null);
   try { await fn(); out[name] = null; }
   catch (e) { out[name] = String(e?.stack ?? e); }
 }

@@ -7,6 +7,7 @@ names the binary instead of looking on PATH (tests use it for a fake one).
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -87,3 +88,26 @@ def require(minimum: tuple[int, int, int] = MIN_VERSION) -> str:
         raise SpecError(f"Herdr app {written} is too old: these profiles need {need}{older}."
                         f" Update Herdr app, {SKIP}.")
     return written
+
+
+HC_TIMEOUT = 5  # seconds `hc machine ls` may take
+
+
+def machines() -> list[str]:
+    """The machines herdr-core knows (`hc machine ls --json`), by name; [] when there are none or
+    hc can't say (not installed, not answering). HERDR_HC_BIN names hc instead of PATH's (tests: a
+    fake one, or something that isn't a program for none)."""
+    program = os.environ.get("HERDR_HC_BIN") or shutil.which("hc") or os.path.expanduser("~/.local/bin/hc")
+    if not (os.path.isfile(program) and os.access(program, os.X_OK)):
+        return []
+    try:
+        r = subprocess.run([program, "machine", "ls", "--json"], capture_output=True, text=True, errors="replace",
+                           stdin=subprocess.DEVNULL, timeout=HC_TIMEOUT)
+        data = json.loads(r.stdout) if r.returncode == 0 else {}
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return []
+    found = data.get("machines") if isinstance(data, dict) else None
+    # Each a name, or an object naming it (its exact shape isn't documented: the usual keys).
+    names = [m if isinstance(m, str) else next((m[k] for k in ("name", "machine", "id") if isinstance(m.get(k), str)), None)
+             if isinstance(m, dict) else None for m in found or []]
+    return [n for n in names if isinstance(n, str) and n]

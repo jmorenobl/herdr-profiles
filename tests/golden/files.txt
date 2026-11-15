@@ -8,6 +8,7 @@ mods/ideas/common.js
 mods/ideas/config.js
 mods/ideas/main.js
 mods/ideas/mod.json
+mods/ideas/place.js
 mods/ideas/review.js
 mods/ideas/side.js
 mods/ideas/store.js

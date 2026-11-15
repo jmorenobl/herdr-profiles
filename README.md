@@ -128,9 +128,10 @@ same way:
   terminal starts on that machine, and hides and comes back as here. Two
   things are slower: Files and History see changes every 10 seconds (no
   folder watch over SSH), and the first time an image is shown it's copied.
-- **`ideas` doesn't yet.** Its ideas folder is on the app's computer, and
-  its agent tabs start there. With everything on the other machine, install
-  only the core for now: `make install ARGS="standard"`.
+- **`ideas` works with its folder there.** Install asks which machine the
+  folder is on when Herdr knows others (or `--set ideas.machine=<name>`):
+  ideas are read, written and committed there, and its agent tabs start
+  there. Details in [the ideas README](profiles/ideas/README.md#the-folder-on-another-machine).
 
 ## Which project gets which profile
 
@@ -157,7 +158,8 @@ terminal's), and picks:
    (to pin one project, put the profile's name in one at its root);
 2. else the first rule that matches: `path` (the folder is inside it) and/or
    `has` (a file or folder with that name is in the project or a parent),
-   e.g. `{ "has": ".board.json", "profile": "ideas" }`;
+   e.g. `{ "has": ".board.json", "profile": "ideas" }`; a rule with
+   `machine` is only for spaces on that machine;
 3. else `default`.
 
 Rules compare folders as text, so:
@@ -169,7 +171,9 @@ Rules compare folders as text, so:
   add a rule for each).
 - **`~` in `path` is this computer's home**, and isn't read at all for a
   space on another machine: there, write the full folder
-  (`/home/you/ideas`). `.herdr-profile` files and `has` work there as here.
+  (`/home/you/ideas`), or give the rule a `machine` (one of
+  `hc machine ls`): it then matches only that machine's spaces, and `~` is
+  that machine's home. `.herdr-profile` files and `has` work there as here.
 
 Edits apply the next time you change space. A profile's own settings (like
 the ideas folder, or its [other options](profiles/ideas/README.md)) go in

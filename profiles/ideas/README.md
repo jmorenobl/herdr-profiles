@@ -274,6 +274,8 @@ Everything else is optional, next to `"folder"` under `profiles.ideas` in
 | `agentName` | the command's name | What the buttons call the agent: `"agentName": "Codex"` gives *Develop with Codex* for `["npx", "-y", "@openai/codex"]`. |
 | `projectsRoot` | none | Where **Start project** puts new projects (`"~/code"`): the agent proposes `<projectsRoot>/<slug>`. Without it, the agent proposes a place and asks. |
 | `autocommit` | `true` | `false` stops the folder from committing itself (below). |
+| `machine` | this computer | The machine the folder is on, one of Herdr's (`hc machine ls`), for when your spaces live there: see [The folder on another machine](#the-folder-on-another-machine). |
+| `reveal` | none | With the folder on another machine that this computer mounts: where its folders are here, `{ "<folder there>": "<folder here>" }`. Without it, **Show in Finder** isn't offered for those ideas. |
 
 ```json
 "ideas": {
@@ -297,6 +299,35 @@ that's no longer a type stops showing until you move it or add the type
 back. The side panel names such folders when it starts, and the board
 keeps their ideas' place in your manual order meanwhile.
 
+### The folder on another machine
+
+When your spaces live on another machine (Herdr's SSH machines), the ideas
+folder can live there too. Name the machine next to the folder, and in the
+rule, so the switcher picks this profile only for that machine's spaces:
+
+```json
+"profiles": { "ideas": { "layout": "ideas", "folder": "~/ideas", "machine": "box" } },
+"rules": [{ "path": "~/ideas", "machine": "box", "profile": "ideas" }]
+```
+
+Install does this for you when Herdr knows other machines: it asks which
+one the folder is on (Enter: this computer), or answer in advance with
+`--set ideas.machine=box`. Then:
+
+- `~` in `folder` and `projectsRoot` (and in that rule) is **that machine's
+  home**. Ideas are read, written and committed there; a change someone
+  else wrote is checked for as here, so nothing is overwritten.
+- **Develop with Claude** and **Start project** open the agent there: in
+  the ideas space, else in a space of that machine (a new one if there's
+  none). If Herdr knows the agent isn't installed there, the button says so
+  instead. **Open project** looks for the project on that machine.
+- The board reads the folder again every 10 seconds (a folder over SSH
+  can't be watched). If the machine can't be reached, the board says so and
+  nothing is written.
+- **Show in Finder** needs the folder mounted here (a file share):
+  `"reveal": { "/home/you": "/Volumes/box" }` says where. Without it the
+  button isn't there for those ideas.
+
 ---
 
 ## 🔎 Good to know
@@ -315,9 +346,9 @@ keeps their ideas' place in your manual order meanwhile.
   Renaming the tab breaks the link.
 - **Front matter is flat**: one `key: value` per line, no nested YAML.
 - Only `<type>/<slug>/idea.md` counts as an idea; loose files are ignored.
-- **Develop with Claude** needs `claude` (or your `agent`) on your PATH.
-  **Show in Finder** runs `open` on macOS; on Linux it's **Show in folder**
-  and runs `xdg-open`. The board reads this computer's folder only.
+- **Develop with Claude** needs `claude` (or your `agent`) on your PATH,
+  on the folder's machine. **Show in Finder** runs `open` on macOS; on Linux
+  it's **Show in folder** and runs `xdg-open`.
 
 How it's built, piece by piece, is in [`RECIPE.md`](RECIPE.md); what changed
 and when, in the repo's [`CHANGELOG.md`](../../CHANGELOG.md).

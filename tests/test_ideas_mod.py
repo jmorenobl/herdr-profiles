@@ -36,7 +36,7 @@ class IdeasModTest(unittest.TestCase):
         root = Path(tmp.name)
         code = root / "mod"
         code.mkdir()
-        for f in ("config.js", "store.js", "ui.js", "actions.js", "capture.js", "board.js", "common.js"):
+        for f in ("config.js", "store.js", "place.js", "ui.js", "actions.js", "capture.js", "board.js", "common.js"):
             text = (MOD / f).read_text()
             text = re.sub(r'from "herdr"', 'from "./herdr.js"', text)
             text = re.sub(r'from "gpui-(kit|base)"', 'from "./gpui.js"', text)

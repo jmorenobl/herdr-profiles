@@ -139,7 +139,8 @@ with its notes and actions, and one key captures a new idea from any space.
   digits of any script, accents off Latin letters and `ß`, `æ`, `ø`, `ł`, …
   spelled out ("Straße" → `strasse`, "日本語" stays), the rest dashes, at most
   48 characters (`idea` when nothing is left; `-2`, `-3` when taken).
-- Everything follows the folder live (`watchFolder`).
+- Everything follows the folder live (`watchFolder`); a folder on another
+  machine is read again every 10 seconds instead.
 
 ## Built from
 
@@ -171,7 +172,7 @@ with its notes and actions, and one key captures a new idea from any space.
   request is a shared token the board compares in render (focus can't be
   taken in render, hence focus on click). Writes go through one promise
   chain so a fast run of choices lands in order.
-- `herdr` calls: `nextCommand`, `watchFolder`, `exec`, `readTextFile`, `writeTextFile`
+- `herdr` calls: `nextCommand`, `watchFolder`, `exec`, `readTextFile`, `writeTextFile`, `knownAgents`
   (with the expected old text), `run` (`tab.new` with `mod`/`argv`/`task`,
   `tab.select`, `tab.move`, `space.select`, `space.new`, `mod.open`),
   `shared`/`setShared`, `notify`, `closeOverlay`, `spaces`, `panes`.
@@ -202,7 +203,19 @@ with its notes and actions, and one key captures a new idea from any space.
     pipx, env, python, python3, node, deno, sh, bash, zsh);
   - `projectsRoot`: where Start project puts projects (checked like
     `folder`, else ignored with a warning). Its task names it; without it the task asks
-    the agent to propose a location and ask.
+    the agent to propose a location and ask;
+  - `machine`: the machine the folder is on (`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`,
+    one of `hc machine ls`; missing, null or "" is this computer, a bad name
+    a warning). Install asks it after `folder`, only on a terminal and only
+    when `hc machine ls` lists machines (`ask` kind `machine`, default "":
+    not written into the entry, and the rule's `"machine": "{machine}"` is
+    left out). Its home is asked of it (`printf "$HOME"`) when the settings
+    are read; `~` in `folder` and `projectsRoot` is that home, and the home
+    checks use it. Unreachable: the board's error says so, the side panel
+    warns, and every read and write fails (nothing is written);
+  - `reveal`: `{ "<folder there>": "<folder here>" }` (both absolute; here
+    may start with `~/`, this computer's home), longest match first: how an
+    idea on another machine is shown in Finder through a mount.
 
   A bad `types`, `agent` or `projectsRoot` falls back whole to its default, and the side
   panel (one per window) shows a warning. Until the settings are read the
@@ -257,10 +270,24 @@ with its notes and actions, and one key captures a new idea from any space.
 - Ages are whole local days (rounded, so a daylight saving change doesn't
   make an idea a day younger).
 - `Develop with Claude` assumes `claude` (or the `agent` setting) is on the
-  PATH. Reveal runs `open` on macOS ("Show in Finder") and `xdg-open` on
+  PATH, on the folder's machine. Reveal runs `open` on macOS ("Show in Finder") and `xdg-open` on
   Linux ("Show in folder"), chosen by `window().platform`; on Windows there's
-  no button. A failure shows a warning. The board reads this computer's
-  folder only.
+  no button. A failure shows a warning. For an idea on another machine
+  it's offered only when `reveal` maps its folder.
+- The folder on another machine (`place.js`): every program, read and write
+  for the folder goes through it with `{ on: machine }`. `writeTextFile`
+  has no `on`, so a write there is `sh` with the text as an argument
+  (`WRITE`: refused when the file isn't the text read, `$(cat; printf x)`
+  keeping trailing newlines, written beside it and moved into place; up to
+  120,000 bytes, one argument's limit on Linux being 128 KiB). The ideas'
+  texts are read in one `sh` (`READ_ALL`), not one read each. Spaces, tabs
+  and panes count only on that machine (ids `machine/…`): a terminal in a
+  folder of the same path elsewhere isn't working in the idea. Develop opens
+  its tab in the ideas space, else the shown space if it's that machine's,
+  else that machine's first space (selected), else `space.new {machine,
+  folder, argv, task}`; `knownAgents({ on })` saying the agent isn't
+  installed there stops it with a warning. Open project tests the folder
+  there and opens `space.new {folder, machine}`.
 
 ## Done when
 

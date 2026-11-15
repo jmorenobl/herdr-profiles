@@ -1,7 +1,9 @@
 // The mod's settings: profiles.json -> profiles.ideas. The only place that reads them.
 // Read fresh on every call (when the mod starts, when capture saves): edits apply then.
+// profiles.json is this computer's; the ideas folder may be on another machine ("machine").
 import { readTextFile, appHome, home } from "herdr";
 import { DEFAULT_TYPES, expand, tilde } from "./store.js";
+import { MACHINE, machineHome, setPlace } from "./place.js";
 
 const DEFAULT_AGENT = ["claude"];
 // The folder when profiles.json doesn't give one: install asks, and ~/ideas is its default too.
@@ -31,8 +33,9 @@ async function settings() {
 // no \x1c-\x1f, C1 control or BOM anywhere (trim() and Python's strip() disagree on those), then
 // surrounding whitespace dropped, one line, starting with / or ~/, no // and no . or .. parts,
 // and not /, the home folder or a folder above it, whatever the letter case (macOS's disk ignores
-// it: "/users" is above "/Users/me"). Returns { path (expanded) } or { problem }.
-export function checkFolder(value) {
+// it: "/users" is above "/Users/me"). `~` and the home are `homeFolder`'s: the home of the
+// machine the folder is on. Returns { path (expanded) } or { problem }.
+export function checkFolder(value, homeFolder = home()) {
   if (typeof value !== "string" || !value.trim()) return { problem: "must be a folder (a string)" };
   if (/[\u001c-\u001f\u0080-\u009f\ufeff]/.test(value)) return { problem: "can't contain control characters (tabs, newlines, …)" };
   let v = value.trim();
@@ -42,8 +45,8 @@ export function checkFolder(value) {
   if (!v.startsWith("/") && !v.startsWith("~/")) return { problem: "must start with / or ~/" };
   if (v.includes("//")) return { problem: "can't have // in it" };
   if (v.split("/").some((p) => p === "." || p === "..")) return { problem: "can't have . or .. in it" };
-  const path = v.startsWith("~/") ? home().replace(/\/+$/, "") + v.slice(1) : v;
-  const h = home().replace(/\/+$/, "") || "/";
+  const path = v.startsWith("~/") ? homeFolder.replace(/\/+$/, "") + v.slice(1) : v;
+  const h = homeFolder.replace(/\/+$/, "") || "/";
   const fold = (p) => p.normalize("NFC").toLowerCase();
   if (fold(path) === fold(h) || fold(h).startsWith(fold(path) + "/")) return { problem: "can't be / or the home folder, or a folder above it" };
   return { path };
@@ -90,22 +93,49 @@ function readAgentName(value) {
   return { agentName: null, warning: '"agentName" must be 1 to 24 characters on one line; the buttons use the command\'s name.' };
 }
 
-// "projectsRoot": where Start project puts new projects ("~/code"); a folder as checkFolder says, else ignored.
-function readProjectsRoot(value) {
+// "projectsRoot": where Start project puts new projects ("~/code"), on the ideas folder's
+// machine; a folder as checkFolder says, else ignored.
+function readProjectsRoot(value, homeFolder) {
   if (value === undefined || value === null) return { projectsRoot: null };
-  const { path, problem } = checkFolder(value);
+  const { path, problem } = checkFolder(value, homeFolder);
   return path ? { projectsRoot: path } : { projectsRoot: null, warning: `"projectsRoot" ${problem}; Start project will ask where.` };
 }
 
 // "folder": the ideas folder. Missing or wrong, ~/ideas is used and `folderNote` says why
 // (the side panel warns, and capture shows where it will save).
-function readFolder(value, problem) {
+function readFolder(value, problem, homeFolder) {
   const fallback = expand(DEFAULT_FOLDER);
   if (problem) return { folder: fallback, folderNote: `${problem}: using ${DEFAULT_FOLDER}.` };
   if (value === undefined) return { folder: fallback, folderNote: `profiles.json → profiles.ideas has no "folder": using ${DEFAULT_FOLDER}.` };
-  const check = checkFolder(value);
+  const check = checkFolder(value, homeFolder);
   if (check.problem) return { folder: fallback, folderNote: `"folder" ${check.problem}: using ${DEFAULT_FOLDER}.` };
   return { folder: check.path, folderNote: null };
+}
+
+// "machine": the machine the ideas folder is on (`hc machine ls`); missing, null or "" is this
+// computer. A bad name is a warning and the folder is looked for here.
+export function readMachine(value) {
+  if (value === undefined || value === null || value === "") return { machine: null };
+  if (typeof value === "string" && MACHINE.test(value.trim())) return { machine: value.trim() };
+  return { machine: null, warning: `"machine" must be a machine's name (letters, digits, ., _ and -); using this computer.` };
+}
+
+// "reveal": how a folder on the ideas machine is reached from this computer, when it's mounted
+// here (a file share): { "<folder there>": "<folder here>" }, both starting with /, the folder
+// here may start with ~/ (this computer's home). Without it, Show in Finder isn't offered for a
+// folder on another machine. Returns { reveal: [[there, here], ...] longest first, warning? }.
+export function readReveal(value) {
+  if (value === undefined || value === null) return { reveal: [] };
+  const bad = { reveal: [], warning: '"reveal" must map folders there to folders here ({ "/home/you": "/Volumes/box" }); Show in Finder is off for remote ideas.' };
+  if (typeof value !== "object" || Array.isArray(value)) return bad;
+  const out = [];
+  for (const [there, hereDir] of Object.entries(value)) {
+    const clean = (p) => (typeof p === "string" && !CONTROL.test(p) && p.trim() ? p.trim().replace(/(.)\/+$/, "$1") : null);
+    const a = clean(there), b = clean(hereDir);
+    if (!a?.startsWith("/") || !(b?.startsWith("/") || b?.startsWith("~/"))) return bad;
+    out.push([a, b.startsWith("~/") ? home().replace(/\/+$/, "") + b.slice(1) : b]);
+  }
+  return { reveal: out.sort((x, y) => y[0].length - x[0].length) };
 }
 
 // What the view starts with until the settings are read: exactly the defaults.
@@ -118,15 +148,29 @@ export const defaultConfig = () => ({
   agent: DEFAULT_AGENT,
   agentName: null,
   projectsRoot: null,
+  machine: null,
+  reveal: [],
   warnings: [],
 });
 
-// { folder, folderNote, autocommit, types, labels, agent, agentName, projectsRoot, warnings }:
+// { folder, folderNote, autocommit, types, labels, agent, agentName, projectsRoot, machine,
+//   reach (why the machine can't be reached, or null), reveal, warnings }:
 // every setting checked, defaults filled in.
 export async function ideasConfig() {
   const { s, problem } = await settings();
   const config = defaultConfig();
-  const f = readFolder(s.folder, problem);
+  // The machine first: `~` in the folder is its home, asked of it.
+  const m = readMachine(s.machine);
+  let homeFolder = home(), reach = null;
+  if (m.machine) {
+    try { homeFolder = await machineHome(m.machine); }
+    catch (e) { reach = `Can't reach "${m.machine}", where the ideas folder is (${String(e?.message ?? e)}).`; }
+  }
+  config.machine = m.machine;
+  config.reach = reach;
+  // Unreachable: nothing there can be read or written, so `~` stays as it is and every use fails.
+  setPlace(m.machine, reach ? "~" : homeFolder);
+  const f = readFolder(s.folder, problem, reach ? "~" : homeFolder);
   config.folder = f.folder;
   config.folderNote = f.folderNote;
   // On unless profiles.json says "autocommit": false.
@@ -138,8 +182,10 @@ export async function ideasConfig() {
   config.agent = a.agent;
   const n = readAgentName(s.agentName);
   config.agentName = n.agentName;
-  const r = readProjectsRoot(s.projectsRoot);
+  const r = readProjectsRoot(s.projectsRoot, reach ? "~" : homeFolder);
   config.projectsRoot = r.projectsRoot;
-  config.warnings = [f.folderNote, t.warning, a.warning, n.warning, r.warning].filter(Boolean);
+  const v = readReveal(s.reveal);
+  config.reveal = v.reveal;
+  config.warnings = [reach, m.warning, f.folderNote, t.warning, a.warning, n.warning, r.warning, v.warning].filter(Boolean);
   return config;
 }

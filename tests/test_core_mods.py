@@ -227,6 +227,18 @@ class CoreModsTest(unittest.TestCase):
         self.assertEqual(p["hasMissing"], {"profile": "standard"})
         self.assertEqual(p["loaded"], {"profile": "standard"})  # ideas: null is no profile
 
+    def test_rules_naming_a_machine(self):
+        m = self.out["machineRules"]
+        self.assertEqual(m["boxFull"], "ideas")
+        self.assertEqual(m["boxTilde"], "ideas")  # ~ is box's home
+        self.assertEqual(m["localSpace"], "standard")  # a space here isn't box's
+        self.assertEqual(m["otherMachine"], "standard")
+        self.assertEqual(m["noMachineRule"], "ideas")  # without machine: any space, as before
+        self.assertEqual(m["noMachineTilde"], "standard")  # ... and ~ is this computer's, not read there
+        self.assertEqual(m["badMachine"], "standard")
+        self.assertEqual(m["boxHas"], "ideas")
+        self.assertEqual(m["unreachable"], "standard")
+
     # FIND_UP, the switcher's shell script.
 
     def find_up(self, folder, name, home=None):

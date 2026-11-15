@@ -22,6 +22,7 @@ const fail = (name) => () => { throw new Error(`${name} is not available in test
 export const writeTextFile = fail("writeTextFile");
 export const run = fail("run");
 export const notify = fail("notify");
+export const knownAgents = async () => [];
 export const spaces = () => [];
 export const panes = () => [];
 export const shared = () => null;

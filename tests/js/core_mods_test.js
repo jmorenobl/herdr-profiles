@@ -93,6 +93,27 @@ out.pick.hasMissing = await pick(base([{ has: "nothing-here", profile: "ideas" }
 out.pick.loaded = await pick(await cfg({ default: "standard", profiles: { standard: { layout: "standard" }, ideas: null }, rules: [null, { path: "~/proj", profile: "ideas" }] }));
 out.findUp = FIND_UP;
 
+// Rules that name a machine: only for spaces on it, and `~` is that machine's home.
+delete state.files[`${root}/proj/.herdr-profile`];
+state.machines = { box: root };
+const onBox = { tabs: [], folder: `${root}/proj/sub`, machine: "box" };
+const pickOn = async (sp, config) => { try { return (await profileFor(sp, config)) ?? null; } catch (e) { return String(e); } };
+const boxRule = (path, more = {}) => base([{ path, machine: "box", profile: "ideas", ...more }]);
+out.machineRules = {
+  boxFull: await pickOn(onBox, boxRule(`${root}/proj`)),
+  boxTilde: await pickOn(onBox, boxRule("~/proj")),
+  localSpace: await pickOn(space, boxRule(`${root}/proj`)),
+  otherMachine: await pickOn({ ...onBox, machine: "far" }, boxRule(`${root}/proj`)),
+  noMachineRule: await pickOn(onBox, base([{ path: `${root}/proj`, profile: "ideas" }])),
+  noMachineTilde: await pickOn(onBox, base([{ path: "~/proj", profile: "ideas" }])),
+  badMachine: await pickOn(onBox, base([{ path: `${root}/proj`, machine: "", profile: "ideas" }, { path: `${root}/proj`, machine: 3, profile: "ideas" }])),
+  boxHas: await pickOn(onBox, base([{ has: "sub", machine: "box", profile: "ideas" }])),
+};
+// An unreachable machine: its `~` rule can't match, and nothing throws.
+state.machines = {};
+out.machineRules.unreachable = await pickOn({ ...onBox, machine: "gone" }, base([{ path: "~/proj", machine: "gone", profile: "ideas" }]));
+state.machines = { box: root };
+
 // The bottom terminal: what the toggle does, and which parked shells nobody can show any more.
 const sp = { id: "sp1", tabs: [{ id: "tb1", active: false }, { id: "tb2", active: true }] };
 const shell = (address, space, more = {}) => ({ address, state: "live", labels: { [LABEL]: space }, ...more });

@@ -66,8 +66,12 @@ export default class Ideas extends View {
       await this.reload(cx);
       this.scheduleCommit(cx);
       for (;;) {
-        try { await watchFolder(this.folder); }
-        catch { await new Promise((r) => cx.timer.after(5000, r)); }
+        // A folder on another machine can't be watched from here: it's read again every 10 seconds.
+        if (this.config.machine) await new Promise((r) => cx.timer.after(10000, r));
+        else {
+          try { await watchFolder(this.folder); }
+          catch { await new Promise((r) => cx.timer.after(5000, r)); }
+        }
         await this.reload(cx);
         this.scheduleCommit(cx);
       }

@@ -3,7 +3,8 @@
 // `sh` (the switcher's FIND_UP, on throwaway folders); anything else throws.
 import { execFileSync } from "node:child_process";
 
-export const state = { profiles: null, home: "/home/u", appHome: "/home/u/.config/herdr-app", panes: [], files: {} };
+// machines: another machine's name -> its home; exec with { on } runs here with that HOME.
+export const state = { profiles: null, home: "/home/u", appHome: "/home/u/.config/herdr-app", panes: [], files: {}, machines: {}, asked: [] };
 export const home = () => state.home;
 export const appHome = () => state.appHome;
 export async function readTextFile(path) {
@@ -13,10 +14,14 @@ export async function readTextFile(path) {
   if (path in state.files) return state.files[path];
   throw new Error("No such file");
 }
-export async function exec(cmd, args) {
+export async function exec(cmd, args, options = {}) {
   if (cmd !== "sh") throw new Error(`exec ${cmd} is not allowed in tests`);
+  const on = options.on ?? null;
+  state.asked.push(on);
+  if (on && !(on in state.machines)) throw new Error(`cannot reach ${on}`);
+  const env = on ? { ...process.env, HOME: state.machines[on] } : process.env;
   try {
-    return { code: 0, stdout: execFileSync("sh", args, { encoding: "utf8", timeout: 5000 }), stderr: "" };
+    return { code: 0, stdout: execFileSync("sh", args, { encoding: "utf8", timeout: 5000, env }), stderr: "" };
   } catch (e) {
     if (typeof e.status !== "number") throw e;
     return { code: e.status, stdout: e.stdout ?? "", stderr: e.stderr ?? "" };
