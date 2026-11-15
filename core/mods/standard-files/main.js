@@ -1,5 +1,5 @@
 // A lazy file browser for the focused pane's folder, with bounded read-only previews.
-// Cloned from Herdr's `files` (0.1.14) for the standard profile: markdown files open
+// Cloned from Herdr's `files` (0.1.15) for the standard profile: markdown files open
 // rendered, with a toggle back to their source.
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState, TextView } from "gpui-base";

@@ -205,7 +205,7 @@ leaves the recipe for you to change.
 `mods/standard-files/` (from `files`) and `mods/standard-tabs/` (from
 `tabs`). Clones are never updated by Herdr, so a new Herdr's fixes don't
 reach them on their own. `upstream/` keeps the originals they came from,
-unchanged, and `upstream/herdr.json` the version (0.1.14 today).
+unchanged, and `upstream/herdr.json` the version (0.1.15 today).
 
 Herdr updates itself; when it's newer than that version, `make install`
 says so (a note; it goes on). Then:

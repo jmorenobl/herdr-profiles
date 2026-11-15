@@ -5,7 +5,7 @@ This product is licensed under the Apache License, Version 2.0 (LICENSE).
 
 It includes work derived from Herdr (https://herdr.dev,
 https://github.com/herdrdev/herdr-app), also under the Apache License,
-Version 2.0. These files were cloned from Herdr 0.1.14 and changed:
+Version 2.0. These files were cloned from Herdr 0.1.15 and changed:
 
 - core/layouts/standard.json: Herdr's `main` layout. The install build adds
   the profile switcher to it.

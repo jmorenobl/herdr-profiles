@@ -1,5 +1,5 @@
 {
-  "version": "0.1.14",
+  "version": "0.1.15",
   "clones": {
     "core/layouts/standard.json": "layouts/main.json",
     "core/mods/standard-files": "mods/files",

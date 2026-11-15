@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- `standard`: the tab bar keeps the active tab in view, as Herdr 0.1.15's
+  does: selecting a tab, or a rename or status dot that makes a tab wider,
+  scrolls the bar to it when the tabs don't all fit. Merged from Herdr's
+  `tabs` (`make upstream`); `upstream/` now holds Herdr 0.1.15's originals,
+  and `main` and `files` had nothing new. It needs gpui-base's
+  `ScrollHandle`; on a Herdr without it the bar works as before, so 0.1.14
+  is still enough.
+
 - `ideas`: the ideas space is the one the switcher chose the `ideas`
   profile for, not any space with a pane in the ideas folder. A project's
   space with an agent tab in an idea's folder no longer gets a Board tab
