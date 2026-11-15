@@ -360,7 +360,7 @@ class InstallerTest(HomeCase):
                 self.assertEqual(code, 0, out)
                 self.assertEqual("Which machine is that folder on?" in out, asked, out)
                 if asked:
-                    self.assertIn("(box, vps) [this computer]", out)
+                    self.assertIn("Which machine is that folder on? (box, vps; Enter: this computer) [this computer]", out)
                 entry, rules = self.ideas_entry()
                 self.assertEqual(entry.get("machine"), machine)
                 self.assertEqual(rules, [{"path": "~/ideas", **({"machine": machine} if machine else {}), "profile": "ideas"}])

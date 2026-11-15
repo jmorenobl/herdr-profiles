@@ -37,7 +37,7 @@
     },
     {
       "setting": "machine",
-      "question": "Which machine is that folder on? Enter: this computer",
+      "question": "Which machine is that folder on?",
       "default": "",
       "kind": "machine"
     }

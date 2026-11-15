@@ -156,7 +156,7 @@ def ask_first_time(packages: list[Package], home: Home, manifest: dict,
 def ask_until_valid(pkg: Package, ask, prompt: Callable[[str], str], names: list[str] | None = None) -> str:
     """Asks until the answer will do. `names`: for a machine, the ones herdr-core knows (shown,
     and the answer must be one of them or empty)."""
-    question = f"{ask.question} ({', '.join(names)})" if names else ask.question
+    question = f"{ask.question} ({', '.join(names)}; Enter: this computer)" if names else ask.question
     while True:
         try:
             typed = prompt(f"  {pkg.name}: {question} [{shown_default(ask)}] ")
